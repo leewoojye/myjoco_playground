@@ -1,0 +1,13 @@
+{
+  "duration": 8.0,
+  "target_speed": 0.35,
+  "assist": true,
+  "pitch_target": 0.08,
+  "height_target": 0.86,
+  "cem": {
+    "iterations": 12,
+    "population": 32,
+    "elite_fraction": 0.25,
+    "seed": 7
+  }
+}

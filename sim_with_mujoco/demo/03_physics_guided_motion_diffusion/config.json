@@ -1,0 +1,12 @@
+{
+  "dataset": "motion_rollouts.npz",
+  "checkpoint": "tiny_diffusion_policy.pt",
+  "episodes": 64,
+  "horizon": 32,
+  "control_skip": 15,
+  "diffusion_steps": 50,
+  "train_steps": 1500,
+  "batch_size": 128,
+  "learning_rate": 0.0003,
+  "seed": 23
+}

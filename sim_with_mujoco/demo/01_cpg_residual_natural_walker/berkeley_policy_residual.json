@@ -1,0 +1,64 @@
+{
+  "robot": "berkeley",
+  "berkeley_residual": [
+    0.010423350516032583,
+    0.1455513871201997,
+    0.058177701213097816,
+    -0.06912001880924942,
+    0.15481464457320512,
+    0.008366769443715807,
+    0.05010224195845107
+  ],
+  "best_reward": 21.69250030538578,
+  "history": [
+    {
+      "iteration": 0,
+      "best_reward": 17.549193771493083
+    },
+    {
+      "iteration": 1,
+      "best_reward": 18.159921321918695
+    },
+    {
+      "iteration": 2,
+      "best_reward": 18.400349972653448
+    },
+    {
+      "iteration": 3,
+      "best_reward": 18.596436871742128
+    },
+    {
+      "iteration": 4,
+      "best_reward": 19.464703163509228
+    },
+    {
+      "iteration": 5,
+      "best_reward": 19.877222897223366
+    },
+    {
+      "iteration": 6,
+      "best_reward": 20.50571136311352
+    },
+    {
+      "iteration": 7,
+      "best_reward": 20.87668322608529
+    },
+    {
+      "iteration": 8,
+      "best_reward": 21.4519169325861
+    },
+    {
+      "iteration": 9,
+      "best_reward": 21.564528973634765
+    },
+    {
+      "iteration": 10,
+      "best_reward": 21.6372329447024
+    },
+    {
+      "iteration": 11,
+      "best_reward": 21.69250030538578
+    }
+  ],
+  "note": "CEM residual for CPG-Residual Natural Walker demo."
+}
