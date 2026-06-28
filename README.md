@@ -1,91 +1,74 @@
-![Simulator preview](/assets/images/myjoco3.png)
+![Simulator preview](/assets/images/img6.png)
 
 ## Simulator Overview
 
-The current branch focuses on a dVRK PSM teleoperation demo for surgical robot simulation, while keeping the original kinematic and dynamic simulator entries for general robot-control experiments.
+기존 MuJoCo 기반 simulator 위에 SurRoL 연구를 참고하여 dVRK PSM model, RCM(Remote Center of Motion) 기반 제어 관점, needle reach task를 추가했습니다. 특히 SurRoL의 PSM teleoperation 흐름과 RCM frame에서의 도구 끝점 제어 방식을 참고하면서, 일반적인 manipulator 제어와 다른 수술로봇 특화 제어 구조를 실험할 수 있도록 구성했습니다. 본 실험을 통해 의료특화 로봇이 왜 별도의 kinematic constraint와 task setup(예. 성공 기준인 tip error 정의)을 필요로 하는지 직접 확인할 수 있었습니다.
 
 ### dVRK PSM Needle Reach Teleoperation
 
-The main entry file is:
+main entry file:
 
 ```text
 sim_with_mujoco/demo/dvrk_psm_teleop_demo.py
 ```
 
-
-Run the GUI demo from the project root:
+프로젝트 루트에서 다음 명령으로 GUI demo를 실행합니다:
 
 ```bash
 python -m sim_with_mujoco.demo.dvrk_psm_teleop_demo
 ```
 
-
-The demo uses the SurRoL-derived PSM model by default:
+demo는 기본적으로 SurRoL PSM model을 사용합니다:
 
 ```text
 assets/robots/dvrk/scene_psm_surrol_needle_reach.xml
 assets/robots/dvrk/psm_surrol.xml
 ```
 
-
-The task is a reach-only surgical preview: move the PSM tool tip toward the green needle target while keeping the shaft close to the RCM constraint. Grasping, gauze retrieval, and needle pickup are intentionally disabled in the current entry.
+현재는 needle reach task만을 수행한 상태이며 grasping, gauze retrieval, needle pickup task로까지의 확장을 목표로 하고 있습니다. PSM tool tip을 초록색 needle target 쪽으로 이동시키면서 shaft가 RCM constraint에서 크게 벗어나지 않도록 제어합니다.
 
 ### Controls
 
 | Input | Behavior |
 | --- | --- |
-| W / S | Move the commanded tool-tip target along world z |
-| A / D | Move the commanded tool-tip target along world y |
-| Q / E | Move the commanded tool-tip target along world x |
-| Mouse drag | Rotate, pan, or move the MuJoCo free camera |
-| Mouse wheel | Zoom around the needle target focus |
-| V or M | Switch to the fixed overview camera |
-| F | Return to the free camera |
+| W / S | commanded tool-tip target을 world z 방향으로 이동 |
+| A / D | commanded tool-tip target을 world y 방향으로 이동 |
+| Q / E | commanded tool-tip target을 world x 방향으로 이동 |
 
-The upper-left overlay reports the current task, action vector, tip error, RCM error, joint-limit margin, and safety status.
+<!-- | Mouse drag | MuJoCo free camera 회전, pan, 이동 |
+| Mouse wheel | needle target focus 기준 zoom |
+| V or M | fixed overview camera로 전환 |
+| F | free camera로 복귀 | -->
+
+좌측 상단 overlay에는 현재 task, action vector, tip error, RCM error, joint-limit margin, safety status가 표시됩니다.
 
 ## Installation
 
-Create and activate a conda environment:
+conda environment를 생성하고 활성화합니다:
 
 ```bash
 conda create -n my_robotics python=3.12
 conda activate my_robotics
 ```
 
-
-Install dependencies from the project root:
+프로젝트 루트에서 dependency를 설치합니다:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-
-Core runtime dependencies include MuJoCo, GLFW, NumPy, and SciPy.
-
 ## Core Implementation
 
 | Area | Current implementation |
 | --- | --- |
-| dVRK model | SurRoL psm_RL.urdf-derived PSM chain adapted to MyJoCo MJCF naming, sites, and actuators |
-| Task scene | Table, tray, red needle proxy, green needle reach target, active mocap target marker |
-| Input viewer | SurrolKeyboardViewer, a lightweight GLFW/MuJoCo viewer with SurRoL-style keyboard preview input |
-| Teleoperation target | Keyboard input creates small task-space target increments around the current tool-tip pose |
-| IK | solve_dvrk_rcm_ik converts the desired world-frame tip target into the PSM RCM frame and solves yaw, pitch, and insertion targets |
-| Actuation | Active joints are updated with a kinematic servo preview for stable SurRoL-like teleoperation |
-| Mimic joints | Passive pitch-linkage and jaw visual joints are synchronized manually because the converted MJCF does not encode URDF mimic joints |
-| Metrics | Tip error, RCM error, joint-limit margin, and forbidden-contact count are reported through surgical task utilities |
-
-The active PSM joints used by the demo are:
-
-```text
-psm_yaw
-psm_pitch
-psm_insertion
-psm_roll
-psm_wrist_pitch
-psm_wrist_yaw
-```
+| dVRK model | SurRoL psm_RL.urdf 기반 PSM chain을 MyJoCo MJCF naming, site, actuator 구조에 맞게 구성 |
+| Task scene | table, tray, red needle proxy, green needle reach target, active mocap target marker로 구성 |
+| Input viewer | SurRoL-style keyboard preview input을 제공하는 lightweight GLFW/MuJoCo viewer인 SurrolKeyboardViewer 사용 |
+| Teleoperation target | keyboard input을 현재 tool-tip pose 주변의 작은 task-space target increment로 변환 |
+| IK | solve_dvrk_rcm_ik에서 desired world-frame tip target을 PSM RCM frame으로 변환한 뒤 yaw, pitch, insertion target 계산 |
+| Actuation | 안정적인 SurRoL-like teleoperation preview를 위해 active joint를 kinematic servo 방식으로 갱신 |
+| Mimic joints | 변환된 MJCF가 URDF mimic joint를 직접 표현하지 않으므로 passive pitch-linkage와 jaw visual joint를 Python에서 동기화 |
+| Metrics | surgical task utility를 통해 tip error, RCM error, joint-limit margin, forbidden-contact count를 계산 |
 
 ## Simulator Structure
 
@@ -114,9 +97,7 @@ assets/robots/dvrk/
   psm_surrol.xml                  SurRoL-derived PSM MJCF
   scene_psm_surrol_needle_reach.xml
                                   current default surgical reach scene
-  surrol_psm/                     copied SurRoL source URDF and license
 ```
-
 
 <!-- ## Current Limitations
 
@@ -127,24 +108,14 @@ assets/robots/dvrk/
 - Passive mimic joints from the SurRoL URDF are synchronized in Python because the MJCF conversion does not yet include an equality-constraint replacement for URDF mimic behavior.
 - Scene contacts and needle geometry are simplified proxies. -->
 
-## Asset Sources
-
-Primary upstream reference:
-
-- SurRoL: https://github.com/med-air/SurRoL
-
 ## References
 
-- MuJoCo XML modeling documentation
-- MuJoCo computation and API documentation
-- MuJoCo visualization documentation
-- Gymnasium MuJoCo environment API
+- MuJoCo documentation
 - Modern Robotics, Kevin M. Lynch and Frank C. Park
 - Drake Differential IK: https://drake.mit.edu/doxygen_cxx/group__planning__kinematics.html
 - robosuite Controllers: https://robosuite.ai/docs/modules/controllers.html
 - dm_control: https://github.com/google-deepmind/dm_control
-- ROBOTIS MuJoCo Menagerie assets: https://github.com/ROBOTIS-GIT/robotis_mujoco_menagerie
-- robosuite assets: https://github.com/ARISE-Initiative/robosuite
+- SurRoL: https://github.com/med-air/SurRoL
 
 ## Tech Stack
 
