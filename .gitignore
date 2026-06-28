@@ -1,5 +1,6 @@
 /robotis_mujoco_menagerie/
 /venv/
+/.venv/
 /temp/
 /sim_with_mujoco/temp/
 /.vscode/

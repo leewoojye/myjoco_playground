@@ -11,19 +11,34 @@ class Viewer:
     def __init__(self, model, data):  # 참조 전달
         self.model = model
         self.data = data
+        self.overlay_lines = []
 
-    def init_viewer(self, initial_target_pos, slider_range=(-0.2, 0.2), rotation_slider_range=(-0.25, 0.25)):
+    def set_overlay(self, lines):
+        self.overlay_lines = list(lines)
+
+    def init_viewer(
+        self,
+        initial_target_pos,
+        slider_range=(-0.2, 0.2),
+        rotation_slider_range=(-0.25, 0.25),
+        target_axes=None,
+        target_ranges=None,
+        window_title="MyJoCo",
+        initial_camera=(180, -20, 3, 1),
+    ):
         self.hand_pose_panel = GlfwTargetPanel(
             initial_target_pos,
+            axes=target_axes,
             slider_range=slider_range,
             rotation_slider_range=rotation_slider_range,
+            ranges=target_ranges,
         )
-        self.gui_panel = GUIPanel(initial_camera=[180, -20, 3, 1])
+        self.gui_panel = GUIPanel(initial_camera=initial_camera)
 
         if not glfw.init():
             raise RuntimeError("Failed to initialize GLFW")
 
-        self.window = glfw.create_window(1200, 900, "MyJoCo", None, None)
+        self.window = glfw.create_window(1200, 900, window_title, None, None)
         if not self.window:
             glfw.terminate()
             raise RuntimeError("Failed to create GLFW window")
@@ -92,6 +107,15 @@ class Viewer:
         mujoco.mjr_render(self.viewport, self.scene, self.context)
         self.hand_pose_panel.render(self.window, self.context)
         self.gui_panel.render(self.window, self.context)
+        if self.overlay_lines:
+            mujoco.mjr_overlay(
+                mujoco.mjtFont.mjFONT_NORMAL,
+                mujoco.mjtGridPos.mjGRID_TOPLEFT,
+                self.viewport,
+                "\n".join(self.overlay_lines),
+                "",
+                self.context,
+            )
 
         # glfw/opengl - double buffering
         # render()가 그린 화면을 비로소 창에 띄움

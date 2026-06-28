@@ -4,19 +4,22 @@ import numpy as np
 
 
 class GlfwTargetPanel:
-    AXES = ("dX", "dY", "dZ", "Roll", "Pitch", "Yaw", "thumb", "finger")
+    DEFAULT_AXES = ("dX", "dY", "dZ", "Roll", "Pitch", "Yaw", "thumb", "finger")
 
     def __init__(
         self,
         initial_target,
+        axes=None,
         slider_range=(-0.2, 0.2),
         rotation_slider_range=(-0.4, 0.4),
         grasp_slider_range=(0.0, 1.0),
+        ranges=None,
     ):
-        self.base_target = np.r_[np.asarray(initial_target, dtype=float).reshape(3), np.zeros(len(self.AXES) - 3)]
-        self.offset = np.zeros(len(self.AXES))
+        self.axes = tuple(axes or self.DEFAULT_AXES)
+        self.base_target = np.r_[np.asarray(initial_target, dtype=float).reshape(3), np.zeros(len(self.axes) - 3)]
+        self.offset = np.zeros(len(self.axes))
         self.target = self.base_target.copy()
-        self.ranges = [slider_range] * 3 + [rotation_slider_range] * 3 + [grasp_slider_range] * 2
+        self.ranges = list(ranges or ([slider_range] * 3 + [rotation_slider_range] * 3 + [grasp_slider_range] * 2))
         self.drag_index = None
         self.changed = False
 
@@ -46,7 +49,7 @@ class GlfwTargetPanel:
     def render(self, window, context):
         width, height = glfw.get_framebuffer_size(window)
 
-        for i, axis in enumerate(self.AXES):
+        for i, axis in enumerate(self.axes):
             y = height - 50 - i * 35
             x = width - 300
 
@@ -91,7 +94,7 @@ class GlfwTargetPanel:
     def _hit_slider(self, mouse_x, mouse_y):
         width, height = glfw.get_framebuffer_size(glfw.get_current_context())
 
-        for i in range(len(self.AXES)):
+        for i in range(len(self.axes)):
             y = height - 50 - i * 35
             x = width - 300
             if x + 110 <= mouse_x <= x + 270 and y <= mouse_y <= y + 28:

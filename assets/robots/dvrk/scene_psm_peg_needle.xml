@@ -1,0 +1,58 @@
+<mujoco model="dvrk_psm_peg_needle_scene">
+  <include file="psm.xml"/>
+
+  <option timestep="0.002" integrator="implicitfast" gravity="0 0 0"/>
+  <statistic center="0.05 0.0 0.35" extent="0.85"/>
+
+  <visual>
+    <headlight diffuse="0.55 0.55 0.55" ambient="0.32 0.32 0.32" specular="0.1 0.1 0.1"/>
+    <global azimuth="145" elevation="-24"/>
+    <rgba haze="0.12 0.14 0.16 1"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.76 0.80 0.86" rgb2="0.12 0.15 0.18" width="512" height="3072"/>
+    <texture type="2d" name="grid" builtin="checker" mark="edge" rgb1="0.18 0.20 0.22" rgb2="0.24 0.27 0.30"
+      markrgb="0.58 0.62 0.66" width="300" height="300"/>
+    <material name="floor_mat" texture="grid" texuniform="true" texrepeat="4 4" reflectance="0.08"/>
+    <material name="board_mat" rgba="0.18 0.22 0.24 1" specular="0.15" shininess="0.2"/>
+    <material name="peg_mat" rgba="0.82 0.84 0.78 1" specular="0.25" shininess="0.4"/>
+    <material name="target_mat" rgba="0.0 0.85 0.35 0.72"/>
+    <material name="needle_mat" rgba="0.80 0.78 0.70 1" specular="0.5" shininess="0.7"/>
+    <material name="danger_mat" rgba="0.8 0.05 0.03 0.18"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0.1 -0.4 1.4" dir="0 0 -1" directional="true"/>
+    <geom name="floor" size="0 0 0.05" type="plane" material="floor_mat"/>
+
+    <body name="surgical_board" pos="0.03 0.0 0.10">
+      <geom name="board" type="box" size="0.20 0.14 0.014" material="board_mat"/>
+      <geom name="forbidden_zone" type="box" pos="-0.09 0 0.017" size="0.028 0.12 0.003" material="danger_mat" contype="0" conaffinity="0"/>
+
+      <body name="peg_1" pos="-0.055 -0.065 0.040">
+        <geom type="cylinder" size="0.008 0.026" material="peg_mat"/>
+        <site name="peg_target_1" pos="0 0 0.037" size="0.006" rgba="0 0.85 0.35 1"/>
+      </body>
+      <body name="peg_2" pos="0.020 -0.045 0.040">
+        <geom type="cylinder" size="0.008 0.026" material="peg_mat"/>
+        <site name="peg_target_2" pos="0 0 0.037" size="0.006" rgba="0 0.85 0.35 1"/>
+      </body>
+      <body name="peg_3" pos="0.075 0.015 0.040">
+        <geom type="cylinder" size="0.008 0.026" material="peg_mat"/>
+        <site name="peg_target_3" pos="0 0 0.037" size="0.006" rgba="0 0.85 0.35 1"/>
+      </body>
+
+      <body name="needle_body" pos="0.012 0.072 0.037" euler="0 1.25 0.58">
+        <geom name="needle_proxy" type="capsule" fromto="-0.030 0 0 0.030 0 0" size="0.0024" material="needle_mat"/>
+        <site name="needle_approach_target" pos="0.0 0.0 0.030" size="0.007" rgba="0 0.35 1 1"/>
+      </body>
+    </body>
+
+    <body name="active_target_marker" mocap="true" pos="0.0 0.0 0.18">
+      <geom name="active_target_sphere" type="sphere" size="0.010" material="target_mat" contype="0" conaffinity="0"/>
+    </body>
+
+    <camera name="overview_camera" mode="fixed" pos="0.52 -0.65 0.66" xyaxes="0.78 0.62 0 -0.30 0.38 0.87" fovy="45"/>
+  </worldbody>
+</mujoco>

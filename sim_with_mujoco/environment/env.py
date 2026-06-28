@@ -25,14 +25,19 @@ class Environment:
     # main.py는 렌더링 루프, 시뮬레이션 루프 이중 반복문 구조
     # main.py에서 view(mujoco viewer, glfw panel), env 인스턴스 생성 -> 매 렌더링마다 panel state polling -> polled target으로 ik solver 호출 -> 목표 관절각 env.forward() -> ...
 
-    def __init__(self, xml_path, end_effector):
+    def __init__(self, xml_path, end_effector, secondary_body=None):
         self.model, self.data = parser(xml_path)
         self.ee_body_id = mujoco.mj_name2id(
             self.model,
             mujoco.mjtObj.mjOBJ_BODY,
             end_effector,
         )
+        if self.ee_body_id == -1:
+            raise ValueError(f"Unknown end effector body: {end_effector}")
         self.ee_body_name = end_effector
+        self.secondary_body_name = secondary_body
+        self.left_hand_id = -1
+        self.left_initial_T = None
         self.viewer = Viewer(self.model, self.data)
         # self.left_hand_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "arm_l_link7")  # 추후 수정
         # self.left_initial_T = get_body_T(self.data, self.left_hand_id)
@@ -74,10 +79,13 @@ class Environment:
 
         for name, value in q_des.items():
             joint_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name)
+            if joint_id == -1:
+                raise ValueError(f"Unknown joint in initial_qpos: {name}")
             actuator_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
             qadr = self.model.jnt_qposadr[joint_id]
             self.data.qpos[qadr] = value
-            self.data.ctrl[actuator_id] = self.data.qpos[qadr]
+            if actuator_id != -1:
+                self.data.ctrl[actuator_id] = self.data.qpos[qadr]
 
         # qpos/qvel/ctrl 기준으로 kinematics + velocity, force, qacc 등등 계산
         mujoco.mj_forward(self.model, self.data)
@@ -87,10 +95,10 @@ class Environment:
         self.initial_pose = get_body_T(self.data, self.ee_body_id)
         self.initial_q = self.data.qpos.copy()
 
-        self.left_hand_id = mujoco.mj_name2id(
-            self.model, mujoco.mjtObj.mjOBJ_BODY, "arm_l_link7"
-        )  # 추후 수정, hx5_l_base, arm_l_link7
-        self.left_initial_T = get_body_T(self.data, self.left_hand_id)
+        secondary_body = self.secondary_body_name or "arm_l_link7"
+        self.left_hand_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, secondary_body)
+        if self.left_hand_id != -1:
+            self.left_initial_T = get_body_T(self.data, self.left_hand_id)
 
     # step() wrapper
     def step(self, nstep=1):

@@ -1,0 +1,112 @@
+<mujoco model="dvrk_psm_ecm_lightweight">
+  <compiler angle="radian" autolimits="true"/>
+
+  <default>
+    <joint damping="1.5" armature="0.02"/>
+    <geom rgba="0.75 0.78 0.84 1" friction="0.8 0.005 0.0001"/>
+    <default class="visual">
+      <geom contype="0" conaffinity="0" density="0" group="2"/>
+    </default>
+    <default class="collision">
+      <geom group="3"/>
+    </default>
+  </default>
+
+  <asset>
+    <material name="dvrk_white" rgba="0.78 0.80 0.88 1"/>
+    <material name="dvrk_dark" rgba="0.08 0.09 0.10 1"/>
+    <material name="tool_steel" rgba="0.72 0.72 0.68 1" specular="0.5" shininess="0.6"/>
+    <material name="rcm_safe" rgba="0.0 0.85 0.35 1"/>
+    <material name="ecm_blue" rgba="0.15 0.35 0.75 1"/>
+
+    <mesh name="si_psm_link_0" file="meshes/Si/PSM_ECM/link_0.STL"/>
+    <mesh name="si_psm_link_1" file="meshes/Si/PSM_ECM/link_1.STL"/>
+    <mesh name="si_psm_link_4" file="meshes/Si/PSM_ECM/link_4.STL"/>
+    <mesh name="psm_tool_main" file="meshes/instruments/420006/tool_main_link.STL"/>
+    <mesh name="psm_tool_wrist" file="meshes/instruments/420006/tool_wrist_link.STL"/>
+    <mesh name="psm_jaw_left" file="meshes/instruments/420006/tool_wrist_sca_ee_link_1.STL"/>
+    <mesh name="psm_jaw_right" file="meshes/instruments/420006/tool_wrist_sca_ee_link_2.STL"/>
+    <mesh name="ecm_tool_main" file="meshes/instruments/SF0826001/tool_main_link.STL"/>
+    <mesh name="ecm_tool_roll" file="meshes/instruments/SF0826001/tool_roll_link.STL"/>
+  </asset>
+
+  <worldbody>
+    <body name="psm_base" pos="-0.08 -0.10 0.80">
+      <geom class="visual" type="mesh" mesh="si_psm_link_0" material="dvrk_white" pos="-0.16 0 -0.04"/>
+      <geom class="collision" type="box" size="0.08 0.06 0.06" pos="-0.06 0 0"/>
+
+      <body name="psm_yaw_link" pos="0 0 0">
+        <joint name="psm_yaw" type="hinge" axis="0 0 1" range="-1.2 1.2"/>
+        <geom class="visual" type="mesh" mesh="si_psm_link_1" material="dvrk_white" pos="-0.03 -0.05 -0.08"/>
+        <geom class="collision" type="capsule" fromto="0 0 0 0.12 0 0" size="0.025"/>
+
+        <body name="psm_pitch_link" pos="0 0 0">
+          <joint name="psm_pitch" type="hinge" axis="0 1 0" range="-0.95 0.95"/>
+          <site name="psm_rcm_site" pos="0 0 0" size="0.008" rgba="0 0.85 0.35 1"/>
+          <geom class="visual" type="mesh" mesh="si_psm_link_4" material="dvrk_white" pos="-0.03 0 -0.08"/>
+          <geom class="collision" type="capsule" fromto="0 0 0 0 0 -0.20" size="0.016"/>
+
+          <body name="psm_insertion_link" pos="0 0 0">
+            <joint name="psm_insertion" type="slide" axis="0 0 -1" range="0.04 0.33"/>
+            <site name="psm_shaft_base_site" pos="0 0 0.08" size="0.004" rgba="0 0.85 0.35 1"/>
+            <geom class="visual" type="mesh" mesh="psm_tool_main" material="tool_steel" pos="-0.036 0 0.02"/>
+            <geom class="collision" type="capsule" fromto="0 0 0.08 0 0 -0.48" size="0.0045"/>
+
+            <body name="psm_roll_link" pos="0 0 -0.48">
+              <joint name="psm_roll" type="hinge" axis="0 0 -1" range="-3.14 3.14"/>
+              <geom class="visual" type="mesh" mesh="psm_tool_wrist" material="tool_steel"/>
+              <geom class="collision" type="capsule" fromto="0 0 0 0 0 -0.035" size="0.006"/>
+
+              <body name="psm_wrist_pitch_link" pos="0 0 -0.025">
+                <joint name="psm_wrist_pitch" type="hinge" axis="0 1 0" range="-1.4 1.4"/>
+                <geom class="collision" type="capsule" fromto="0 0 0 0 0 -0.025" size="0.004"/>
+
+                <body name="psm_wrist_yaw_link" pos="0 0 -0.020">
+                  <joint name="psm_wrist_yaw" type="hinge" axis="1 0 0" range="-1.4 1.4"/>
+                  <geom class="collision" type="capsule" fromto="0 0 0 0 0 -0.020" size="0.0035"/>
+
+                  <body name="psm_jaw_left_link" pos="0.002 0 -0.010">
+                    <joint name="psm_jaw" type="hinge" axis="1 0 0" range="0 0.8"/>
+                    <geom class="visual" type="mesh" mesh="psm_jaw_left" material="tool_steel"/>
+                    <geom class="collision" type="capsule" fromto="0 0 0 0.004 0 -0.026" size="0.0015"/>
+                  </body>
+
+                  <body name="psm_jaw_right_link" pos="-0.002 0 -0.010" euler="0 0 3.14159">
+                    <geom class="visual" type="mesh" mesh="psm_jaw_right" material="tool_steel"/>
+                    <geom class="collision" type="capsule" fromto="0 0 0 -0.004 0 -0.026" size="0.0015"/>
+                  </body>
+
+                  <body name="psm_tool_tip" pos="0 0 -0.045">
+                    <site name="psm_tool_tip_site" pos="0 0 0" size="0.006" rgba="1 0.25 0.1 1"/>
+                    <geom class="visual" type="sphere" size="0.004" rgba="1 0.25 0.1 1"/>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+
+    <body name="ecm_base" pos="-0.34 0.46 0.86" euler="0.35 0.0 -0.62">
+      <geom class="visual" type="mesh" mesh="si_psm_link_0" material="ecm_blue" pos="-0.12 0 -0.03"/>
+      <geom class="collision" type="box" size="0.06 0.05 0.05"/>
+      <body name="ecm_scope" pos="0 0 0" euler="0.62 0.0 0.0">
+        <geom class="visual" type="mesh" mesh="ecm_tool_main" material="ecm_blue" pos="-0.035 0 0.03"/>
+        <geom class="visual" type="mesh" mesh="ecm_tool_roll" material="tool_steel" pos="0 0 -0.45"/>
+        <geom class="collision" type="capsule" fromto="0 0 0.08 0 0 -0.45" size="0.008"/>
+        <camera name="ecm_camera" mode="fixed" pos="0 0 -0.46" euler="0 3.14159 0" fovy="48"/>
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <position name="psm_yaw" joint="psm_yaw" kp="80" ctrlrange="-1.2 1.2"/>
+    <position name="psm_pitch" joint="psm_pitch" kp="80" ctrlrange="-0.95 0.95"/>
+    <position name="psm_insertion" joint="psm_insertion" kp="250" ctrlrange="0.04 0.33"/>
+    <position name="psm_roll" joint="psm_roll" kp="35" ctrlrange="-3.14 3.14"/>
+    <position name="psm_wrist_pitch" joint="psm_wrist_pitch" kp="25" ctrlrange="-1.4 1.4"/>
+    <position name="psm_wrist_yaw" joint="psm_wrist_yaw" kp="25" ctrlrange="-1.4 1.4"/>
+    <position name="psm_jaw" joint="psm_jaw" kp="12" ctrlrange="0 0.8"/>
+  </actuator>
+</mujoco>
