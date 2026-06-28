@@ -54,7 +54,7 @@ class Viewer:
         mujoco.mjv_defaultOption(self.opt)
 
         # self.opt.flags[mujoco.mjtVisFlag.mjVIS_JOINT] = True
-        self.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = True
+        # self.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = True
         self.opt.flags[mujoco.mjtVisFlag.mjVIS_TRANSPARENT] = True
         # self.opt.flags[mujoco.mjtVisFlag.mjVIS_BODYBVH] = True # self-collision 탐지용 바운딩박스 시각화
 
@@ -70,10 +70,11 @@ class Viewer:
 
         mujoco.mjv_defaultCamera(self.cam)
         self.cam.type = mujoco.mjtCamera.mjCAMERA_FREE
-        self.cam.lookat[:] = [0, 0, 1.0]
-        self.cam.distance = 3.0
-        self.cam.azimuth = 180
-        self.cam.elevation = -20
+        self.cam.lookat[:] = self.model.stat.center
+        self.cam.azimuth = initial_camera[0]
+        self.cam.elevation = initial_camera[1]
+        self.cam.distance = initial_camera[2]
+        self.cam.lookat[2] = initial_camera[3]
 
     # polling wrapper
     # panel 입력을 polling으로 가져와서 viewer option을 갱신
@@ -82,6 +83,7 @@ class Viewer:
         polled_camera = self.gui_panel.poll_camera(self.window)
 
         if polled_camera is not None:
+            self.cam.type = mujoco.mjtCamera.mjCAMERA_FREE
             self.cam.azimuth = polled_camera[0]
             self.cam.elevation = polled_camera[1]
             self.cam.distance = polled_camera[2]

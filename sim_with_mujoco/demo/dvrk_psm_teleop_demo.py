@@ -1,21 +1,27 @@
 import argparse
 import os
 from pathlib import Path
+import sys
 import time
 
 import glfw
 import mujoco
 import numpy as np
 
-from sim.model.math3d.rotation import rpy2rotation_matrix
 from sim_with_mujoco.environment.env import Environment
 from sim_with_mujoco.tasks.surgical.safety_metrics import compute_surgical_metrics
 from sim_with_mujoco.tasks.surgical.target_sequence import SurgicalReachTarget, SurgicalTargetSequence
 from sim_with_mujoco.utils.dvrk_ik import get_site_transform, solve_dvrk_rcm_ik
 from sim_with_mujoco.utils.mj import joint_ids_from_names
+from sim_with_mujoco.viewer.surrol_keyboard_viewer import SurrolKeyboardViewer
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-XML_PATH = ROOT_DIR / "assets" / "robots" / "dvrk" / "scene_psm_peg_needle.xml"
+XML_PATH = ROOT_DIR / "assets" / "robots" / "dvrk" / "scene_psm_surrol_needle_reach.xml"
+
+SURROL_SCALING = 5.0
+SURROL_POSITION_SCALE = 0.01 * SURROL_SCALING
+WORKSPACE_MARGIN = np.array([0.04, 0.06, 0.02])
+TARGET_SMOOTHING_TAU = 0.12
 
 PSM_JOINT_NAMES = [
     "psm_yaw",
@@ -48,48 +54,63 @@ def _camera_id(model, name):
     return mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, name)
 
 
-def _set_position_ctrl(model, data, joint_ids, q_des):
-    for joint_id in joint_ids:
-        joint_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, joint_id)
-        actuator_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, joint_name)
-        if actuator_id == -1:
-            continue
-
-        qadr = model.jnt_qposadr[joint_id]
-        ctrl = q_des[qadr]
-        if model.actuator_ctrllimited[actuator_id]:
-            lo, hi = model.actuator_ctrlrange[actuator_id]
-            ctrl = np.clip(ctrl, lo, hi)
-        data.ctrl[actuator_id] = ctrl
-
-
-def _set_jaw(model, data, jaw_target):
-    actuator_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, "psm_jaw")
-    if actuator_id != -1:
-        lo, hi = model.actuator_ctrlrange[actuator_id]
-        data.ctrl[actuator_id] = np.clip(jaw_target, lo, hi)
-
-    joint_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "psm_jaw")
-    if joint_id != -1:
-        qadr = model.jnt_qposadr[joint_id]
-        lower, upper = model.jnt_range[joint_id]
-        data.qpos[qadr] = np.clip(jaw_target, lower, upper)
+def _available_joint_mimics(model):
+    mimic_names = [
+        ("psm_pitch_2", "psm_pitch", -1.0, 0.0),
+        ("psm_pitch_3", "psm_pitch", 1.0, 0.0),
+        ("psm_pitch_back", "psm_pitch", 1.0, 0.0),
+        ("psm_pitch_bottom", "psm_pitch", -1.0, 0.0),
+        ("psm_pitch_top", "psm_pitch", -1.0, 0.0),
+        ("psm_pitch_front", "psm_pitch", 1.0, 0.0),
+        ("psm_jaw_1", "psm_jaw", 0.5, 0.0),
+        ("psm_jaw_2", "psm_jaw", 0.5, 0.0),
+    ]
+    mimics = []
+    for passive_name, driver_name, multiplier, offset in mimic_names:
+        passive_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, passive_name)
+        driver_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, driver_name)
+        if passive_id != -1 and driver_id != -1:
+            mimics.append((passive_id, driver_id, multiplier, offset))
+    return mimics
 
 
-def _apply_kinematic_qpos(model, data, joint_ids, q_des):
+def _sync_mimic_qpos(model, qpos, joint_mimics):
+    for passive_id, driver_id, multiplier, offset in joint_mimics:
+        qpos[model.jnt_qposadr[passive_id]] = offset + multiplier * qpos[model.jnt_qposadr[driver_id]]
+
+
+def _sync_mimic_state(model, data, joint_mimics):
+    for passive_id, driver_id, multiplier, offset in joint_mimics:
+        passive_qadr = model.jnt_qposadr[passive_id]
+        driver_qadr = model.jnt_qposadr[driver_id]
+        passive_dadr = model.jnt_dofadr[passive_id]
+        driver_dadr = model.jnt_dofadr[driver_id]
+        data.qpos[passive_qadr] = offset + multiplier * data.qpos[driver_qadr]
+        data.qvel[passive_dadr] = multiplier * data.qvel[driver_dadr]
+
+
+def _apply_kinematic_servo(model, data, joint_ids, q_des, joint_mimics, jaw_target):
     for joint_id in joint_ids:
         qadr = model.jnt_qposadr[joint_id]
         data.qpos[qadr] = q_des[qadr]
+
+    jaw_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "psm_jaw")
+    if jaw_id != -1:
+        jaw_qadr = model.jnt_qposadr[jaw_id]
+        if model.jnt_limited[jaw_id]:
+            lo, hi = model.jnt_range[jaw_id]
+            jaw_target = np.clip(jaw_target, lo, hi)
+        data.qpos[jaw_qadr] = jaw_target
+
+    _sync_mimic_qpos(model, data.qpos, joint_mimics)
     data.qvel[:] = 0.0
-    _set_position_ctrl(model, data, joint_ids, q_des)
+    mujoco.mj_forward(model, data)
+    data.time += model.opt.timestep
 
 
 def _build_sequence(model, data):
     target_specs = [
-        ("Peg 1", "peg_target_1", 0.006),
-        ("Peg 2", "peg_target_2", 0.006),
-        ("Peg 3", "peg_target_3", 0.006),
-        ("Needle Approach", "needle_approach_target", 0.008),
+        ("Needle Reach", "needle_reach_target", 0.008),
     ]
     targets = [
         SurgicalReachTarget(name, data.site_xpos[_site_id(model, site_name)].copy(), tolerance)
@@ -106,7 +127,27 @@ def _set_mocap_target(model, data, position):
         data.mocap_quat[mocap_id] = np.array([1.0, 0.0, 0.0, 0.0])
 
 
+def _needle_reach_workspace(initial_tip_pos, goal_pos):
+    lower = np.minimum(initial_tip_pos, goal_pos) - WORKSPACE_MARGIN
+    upper = np.maximum(initial_tip_pos, goal_pos) + WORKSPACE_MARGIN
+    upper[2] += 0.04
+    return np.column_stack((lower, upper))
+
+
+def _smooth_position(current, target, dt, tau):
+    if tau <= 0.0:
+        return target.copy()
+    alpha = 1.0 - np.exp(-dt / tau)
+    return current + alpha * (target - current)
+
+
+def _is_reached(metrics, target):
+    return metrics.tip_error <= target.tolerance
+
+
 def _has_display():
+    if sys.platform == "darwin":
+        return True
     if os.name != "posix":
         return True
     return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
@@ -122,42 +163,45 @@ def _require_display():
     )
 
 
-def _step_rcm_ik(model, data, ref_data, q_des, q_home, target_T, tip_site_id, shaft_start_site_id, rcm_pos, joint_ids):
+def _step_rcm_ik(
+    model,
+    data,
+    ref_data,
+    q_home,
+    target_T,
+    tip_site_id,
+    rcm_pos,
+    joint_ids,
+    joint_mimics,
+):
     mujoco.mj_copyData(ref_data, model, data)
-    ref_data.qpos[:] = q_des
-    ref_data.qvel[:] = 0.0
+    _sync_mimic_state(model, ref_data, joint_mimics)
     mujoco.mj_forward(model, ref_data)
 
-    ik_result = solve_dvrk_rcm_ik(
+    q_des = solve_dvrk_rcm_ik(
         model,
         ref_data,
         target_T,
         tip_site_id,
-        shaft_start_site_id,
-        tip_site_id,
         rcm_pos,
         joint_ids,
-        model.opt.timestep,
         q_home=q_home,
         dq_limit=0.012,
-        pose_weight=(0.02, 1.0),
-        posture_weight=0.0,
+        joint_mimics=joint_mimics,
     )
-    q_des = ik_result.q_next
-    _apply_kinematic_qpos(model, data, joint_ids, q_des)
-    _set_jaw(model, data, INITIAL_QPOS["psm_jaw"])
-    mujoco.mj_forward(model, data)
-    data.time += model.opt.timestep
-    return q_des
+    _apply_kinematic_servo(model, data, joint_ids, q_des, joint_mimics, INITIAL_QPOS["psm_jaw"])
 
 
-def run_headless_smoke_test(seconds=2.0):
-    env = Environment(XML_PATH, "psm_tool_tip")
+def run_headless_smoke_test(seconds=2.0, xml_path=XML_PATH):
+    env = Environment(xml_path, "psm_tool_tip")
     env.initial_qpos(INITIAL_QPOS)
 
     model = env.model
     data = env.data
     ref_data = mujoco.MjData(model)
+    joint_mimics = _available_joint_mimics(model)
+    _sync_mimic_qpos(model, data.qpos, joint_mimics)
+    mujoco.mj_forward(model, data)
 
     tip_site_id = _site_id(model, "psm_tool_tip_site")
     shaft_start_site_id = _site_id(model, "psm_shaft_base_site")
@@ -170,23 +214,21 @@ def run_headless_smoke_test(seconds=2.0):
     _set_mocap_target(model, data, sequence.current.position)
 
     target_T = get_site_transform(data, tip_site_id)
-    q_des = data.qpos.copy()
     q_home = data.qpos.copy()
     steps = int(seconds / model.opt.timestep)
 
     for _ in range(steps):
         target_T[:3, 3] = sequence.current.position
-        q_des = _step_rcm_ik(
+        _step_rcm_ik(
             model,
             data,
             ref_data,
-            q_des,
             q_home,
             target_T,
             tip_site_id,
-            shaft_start_site_id,
             rcm_pos,
             joint_ids,
+            joint_mimics,
         )
         sequence.update(data.site_xpos[tip_site_id].copy(), data.time)
         _set_mocap_target(model, data, sequence.current.position)
@@ -201,23 +243,27 @@ def run_headless_smoke_test(seconds=2.0):
         sequence.current.position,
         joint_ids,
     )
-    print("DISPLAY/WAYLAND_DISPLAY is missing; ran headless dVRK RCM reach smoke test instead.")
-    print(f"XML: {XML_PATH}")
+    print("Ran headless dVRK RCM reach smoke test.")
+    print(f"XML: {xml_path}")
     print(f"Task: {sequence.current.name} ({sequence.progress_text()})")
     print(f"Tip error: {metrics.tip_error * 1000.0:.2f} mm")
     print(f"RCM error: {metrics.rcm_error * 1000.0:.2f} mm")
     print(f"Safety: {metrics.status()}")
 
 
-def run_gui():
+def run_gui(xml_path=XML_PATH):
     _require_display()
 
-    env = Environment(XML_PATH, "psm_tool_tip")
+    env = Environment(xml_path, "psm_tool_tip")
     env.initial_qpos(INITIAL_QPOS)
 
     model = env.model
     data = env.data
+    env.viewer = SurrolKeyboardViewer(model, data)
     ref_data = mujoco.MjData(model)
+    joint_mimics = _available_joint_mimics(model)
+    _sync_mimic_qpos(model, data.qpos, joint_mimics)
+    mujoco.mj_forward(model, data)
 
     tip_site_id = _site_id(model, "psm_tool_tip_site")
     shaft_start_site_id = _site_id(model, "psm_shaft_base_site")
@@ -230,38 +276,20 @@ def run_gui():
     _set_mocap_target(model, data, sequence.current.position)
 
     env.viewer.init_viewer(
-        env.initial_target_pos,
-        slider_range=(-0.22, 0.22),
-        rotation_slider_range=(-0.8, 0.8),
-        target_axes=("dX", "dY", "dZ", "Roll", "Pitch", "Yaw", "Jaw", "Scale"),
-        target_ranges=[
-            (-0.22, 0.22),
-            (-0.22, 0.22),
-            (-0.12, 0.12),
-            (-0.8, 0.8),
-            (-0.8, 0.8),
-            (-0.8, 0.8),
-            (0.0, 0.8),
-            (0.15, 1.0),
-        ],
         window_title="MyJoCo dVRK PSM Teleoperation",
-        initial_camera=(145, -24, 1.0, 0.28),
+        initial_camera=(180, -20, 0.55),
+        focus_position=sequence.current.position,
     )
 
     overview_camera_id = _camera_id(model, "overview_camera")
-    ecm_camera_id = _camera_id(model, "ecm_camera")
-    if overview_camera_id != -1:
-        env.viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FIXED
-        env.viewer.cam.fixedcamid = overview_camera_id
 
-    initial_tip_T = get_site_transform(data, tip_site_id)
-    target_T = initial_tip_T.copy()
-    q_des = data.qpos.copy()
     q_home = data.qpos.copy()
-    jaw_target = INITIAL_QPOS["psm_jaw"]
-    motion_scale = 0.35
+    target_T = get_site_transform(data, tip_site_id)
+    servo_T = target_T.copy()
+    workspace_limits = _needle_reach_workspace(target_T[:3, 3], sequence.current.position)
+    last_action = np.zeros(3, dtype=float)
 
-    poll_interval = 1.0 / 60.0
+    poll_interval = SurrolKeyboardViewer.KEY_REPEAT_INTERVAL
     render_interval = 1.0 / 60.0
     last_poll_time = 0.0
     last_render_time = 0.0
@@ -272,53 +300,48 @@ def run_gui():
             glfw.poll_events()
             now = time.time()
 
-            if ecm_camera_id != -1 and glfw.get_key(env.viewer.window, glfw.KEY_C) == glfw.PRESS:
-                env.viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FIXED
-                env.viewer.cam.fixedcamid = ecm_camera_id
-            if overview_camera_id != -1 and glfw.get_key(env.viewer.window, glfw.KEY_V) == glfw.PRESS:
+            if overview_camera_id != -1 and (
+                glfw.get_key(env.viewer.window, glfw.KEY_V) == glfw.PRESS
+                or glfw.get_key(env.viewer.window, glfw.KEY_M) == glfw.PRESS
+            ):
                 env.viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FIXED
                 env.viewer.cam.fixedcamid = overview_camera_id
+            if glfw.get_key(env.viewer.window, glfw.KEY_F) == glfw.PRESS:
+                env.viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FREE
 
             if now - last_poll_time >= poll_interval:
                 last_poll_time = now
-                polled_target, _ = env.viewer.poll_target()
-
-                if polled_target is not None:
-                    target_T = initial_tip_T.copy()
-                    target_T[:3, 3] = polled_target[:3]
-                    target_rpy = polled_target[3:6]
-                    target_rot = rpy2rotation_matrix(target_rpy[0], target_rpy[1], target_rpy[2])
-                    target_T[:3, :3] = initial_tip_T[:3, :3] @ target_rot
-                    jaw_target = polled_target[6]
-                    motion_scale = max(0.15, polled_target[7])
+                last_action = env.viewer.poll_action()[:3]
+                target_T[:3, 3] = target_T[:3, 3] + last_action[:3] * SURROL_POSITION_SCALE
+                target_T[:3, 3] = np.clip(
+                    target_T[:3, 3],
+                    workspace_limits[:, 0],
+                    workspace_limits[:, 1],
+                )
 
             for _ in range(steps_per_frame):
                 mujoco.mj_copyData(ref_data, model, data)
-                ref_data.qpos[:] = q_des
-                ref_data.qvel[:] = 0.0
+                _sync_mimic_state(model, ref_data, joint_mimics)
                 mujoco.mj_forward(model, ref_data)
 
-                ik_result = solve_dvrk_rcm_ik(
+                servo_T[:3, 3] = _smooth_position(
+                    servo_T[:3, 3],
+                    target_T[:3, 3],
+                    model.opt.timestep,
+                    TARGET_SMOOTHING_TAU,
+                )
+                q_des = solve_dvrk_rcm_ik(
                     model,
                     ref_data,
-                    target_T,
+                    servo_T,
                     tip_site_id,
-                    shaft_start_site_id,
-                    shaft_end_site_id,
                     rcm_pos,
                     joint_ids,
-                    model.opt.timestep,
                     q_home=q_home,
-                    dq_limit=0.035 * motion_scale,
-                    pose_weight=(0.02, 1.0),
-                    posture_weight=0.0,
+                    dq_limit=0.035,
+                    joint_mimics=joint_mimics,
                 )
-                q_des = ik_result.q_next
-
-                _apply_kinematic_qpos(model, data, joint_ids, q_des)
-                _set_jaw(model, data, jaw_target)
-                mujoco.mj_forward(model, data)
-                data.time += model.opt.timestep
+                _apply_kinematic_servo(model, data, joint_ids, q_des, joint_mimics, 0.0)
 
             tip_pos = data.site_xpos[tip_site_id].copy()
             sequence.update(tip_pos, data.time)
@@ -335,8 +358,11 @@ def run_gui():
             )
             env.viewer.set_overlay(
                 [
+                    "Input: SurRoL keyboard preview",
                     f"Task: {sequence.current.name} ({sequence.progress_text()})",
+                    f"Action world x/y/z: {last_action[0]:+.3f}, {last_action[1]:+.3f}, {last_action[2]:+.3f}",
                     f"Tip error: {metrics.tip_error * 1000.0:5.1f} mm",
+                    f"Reached: {'YES' if _is_reached(metrics, sequence.current) else 'NO'}",
                     f"RCM error: {metrics.rcm_error * 1000.0:5.2f} mm",
                     f"Joint margin: {metrics.joint_margin:5.3f} rad/m",
                     f"Safety: {metrics.status()}",
@@ -353,11 +379,13 @@ def run_gui():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="dVRK PSM teleoperation demo with RCM-constrained IK.")
+    parser.add_argument("--xml", type=Path, help="Override the scene XML path.")
     parser.add_argument("--headless", action="store_true", help="Run a non-interactive numeric reach smoke test.")
     parser.add_argument("--headless-seconds", type=float, default=2.0, help="Duration for the headless smoke test.")
     args = parser.parse_args()
+    xml_path = args.xml.expanduser().resolve() if args.xml else XML_PATH
 
     if args.headless:
-        run_headless_smoke_test(args.headless_seconds)
+        run_headless_smoke_test(args.headless_seconds, xml_path)
     else:
-        run_gui()
+        run_gui(xml_path)

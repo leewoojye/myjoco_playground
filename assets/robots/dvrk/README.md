@@ -1,17 +1,17 @@
-# dVRK PSM/ECM Assets for MyJoCo
+# dVRK PSM Assets for MyJoCo
 
-This folder contains a lightweight MuJoCo scene for a dVRK-style PSM teleoperation demo.
+This folder contains the SurRoL-derived PSM assets used by the MyJoCo needle-reach teleoperation demo.
 
-Upstream reference assets are copied from `jhu-dvrk/dvrk_model`:
+Current runtime files:
 
-- Source: https://github.com/jhu-dvrk/dvrk_model
-- License: MIT, preserved in `LICENSE.upstream`
-- Copied meshes: Si PSM/ECM base links and PSM/ECM instrument STL files
-- Copied URDF/Xacro references: `upstream_urdf/Si`
+- `psm_surrol.xml`: SurRoL `psm_RL.urdf`-derived PSM chain adapted to the same MyJoCo joint/site/actuator names
+- `scene_psm_surrol_needle_reach.xml`: table, tray, needle proxy, target marker, and camera setup
+- `surrol_psm`: SurRoL source URDF, visual meshes, and license
 
-The MyJoCo XML files are intentionally simplified for a stable RCM-constrained teleoperation portfolio demo:
+Upstream reference:
 
-- `psm.xml`: dVRK-style PSM, ECM camera body, position actuators, named tool/shaft sites
-- `scene_psm_peg_needle.xml`: surgical board, peg reach targets, needle approach target, active target marker
+- Source: https://github.com/med-air/SurRoL
+- License: MIT, preserved in `surrol_psm/LICENSE.surrol`
+- Source URDF: `surrol_psm/psm_RL.urdf`
 
-The simplified MJCF is a research/portfolio simulator asset, not a clinically accurate dynamics model.
+This MJCF is a research simulator asset, not a clinically accurate dynamics model.
