@@ -4,6 +4,8 @@
 
 기존 MuJoCo 기반 simulator MyJoCo 위에 SurRoL 연구를 참고하여 dVRK PSM model, RCM(Remote Center of Motion) 기반 제어 관점, needle reach task를 추가했습니다. 특히 SurRoL의 PSM teleoperation 흐름과 RCM frame에서의 도구 끝점 제어 방식을 참고하면서, 일반적인 manipulator 제어와 다른 수술로봇 특화 제어 구조를 실험할 수 있도록 구성했습니다. 본 실험을 통해 의료특화 로봇이 왜 별도의 kinematic constraint와 task setup(예. 성공 기준인 tip error 정의)을 필요로 하는지 직접 확인할 수 있었습니다.
 
+뼈대가 되는 기본 로봇시뮬레이터와 보다 자세한 기술적 설명은 다음 포스팅에서 확인 가능합니다. https://leewoojye.github.io/robotics/research/2026/06/03/myjoco3.html
+
 ### dVRK PSM Needle Reach Teleoperation
 
 main entry file:
@@ -62,12 +64,11 @@ pip install -r requirements.txt
 | Area | Current implementation |
 | --- | --- |
 | dVRK model | SurRoL psm_RL.urdf 기반 PSM chain을 MyJoCo MJCF naming, site, actuator 구조에 맞게 구성 |
-| Task scene | table, tray, red needle proxy, green needle reach target, active mocap target marker로 구성 |
-| Input viewer | SurRoL-style keyboard preview input을 제공하는 lightweight GLFW/MuJoCo viewer인 SurrolKeyboardViewer 사용 |
+| Input viewer | SurRoL 방식 keyboard input을 제공하는 단순한 GLFW/MuJoCo viewer인 SurrolKeyboardViewer class 사용 |
 | Teleoperation target | keyboard input을 현재 tool-tip pose 주변의 작은 task-space target increment로 변환 |
-| IK | solve_dvrk_rcm_ik에서 desired world-frame tip target을 PSM RCM frame으로 변환한 뒤 yaw, pitch, insertion target 계산 |
-| Actuation | 안정적인 SurRoL-like teleoperation preview를 위해 active joint를 kinematic servo 방식으로 갱신 |
-| Mimic joints | 변환된 MJCF가 URDF mimic joint를 직접 표현하지 않으므로 passive pitch-linkage와 jaw visual joint를 Python에서 동기화 |
+| IK | solve_dvrk_rcm_ik에서 목표 world-frame tip target을 PSM RCM frame으로 변환한 뒤 yaw, pitch, insertion target 계산 |
+| Actuation | 안정적인 SurRoL teleoperation preview를 위해 active joint를 kinematic servo 방식으로 갱신 |
+| Mimic joints | 변환된 MJCF가 URDF mimic joint를 직접 표현하지 않으므로 pitch-linkage와 jaw visual joint를 Python에서 동기화 |
 | Metrics | surgical task utility를 통해 tip error, RCM error를 계산 |
 
 <!-- | Metrics | surgical task utility를 통해 tip error, RCM error, joint-limit margin, forbidden-contact count를 계산 | -->
@@ -78,7 +79,6 @@ pip install -r requirements.txt
 sim_with_mujoco/
   demo/
     dvrk_psm_teleop_demo.py       dVRK PSM needle-reach teleoperation entry
-    pd_control_demo.py            PD-control demo
   environment/
     env.py                        MuJoCo model/data/viewer wrapper
   tasks/surgical/
@@ -94,11 +94,6 @@ sim_with_mujoco/
   viewer/
     surrol_keyboard_viewer.py     SurRoL-style keyboard preview viewer
     viewer.py                     generic MuJoCo viewer wrapper
-
-assets/robots/dvrk/
-  psm_surrol.xml                  SurRoL-derived PSM MJCF
-  scene_psm_surrol_needle_reach.xml
-                                  current default surgical reach scene
 ```
 
 <!-- ## Current Limitations
