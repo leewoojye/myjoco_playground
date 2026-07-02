@@ -67,7 +67,7 @@ sim_with_mujoco/
   environment/
     env.py                        MuJoCo model/data/viewer wrapper
   tasks/surgical/
-    safety_metrics.py             tip, RCM, joint-limit, contact metrics
+    safety_metrics.py             tip, RCM metrics
     target_sequence.py            timed target sequence helper
   utils/
     dvrk_ik.py                    dVRK RCM-frame PSM IK
@@ -81,14 +81,11 @@ sim_with_mujoco/
     viewer.py                     generic MuJoCo viewer wrapper
 ```
 
-<!-- ## Current Limitations
+## Current Limitations
 
-- This is a research/portfolio simulator asset, not a clinically accurate dVRK dynamics model.
-- The current surgical demo is reach-only. Needle grasping, gauze retrieval, suturing, and contact-rich manipulation are not implemented in the active entry.
-- Keyboard input is a preview substitute for master-device teleoperation. It is not equivalent to real dVRK MTM or haptic-device pose control.
-- The current IK prioritizes tip-position reach and RCM consistency. Tool orientation is not strongly constrained, so wrist motion can absorb part of the commanded target displacement.
-- Passive mimic joints from the SurRoL URDF are synchronized in Python because the MJCF conversion does not yet include an equality-constraint replacement for URDF mimic behavior.
-- Scene contacts and needle geometry are simplified proxies. -->
+- 현재 demo는 needle reach 중심이며 grasping, gauze retrieval 태스크도 수행해야 합니다.
+- Keyboard input은 실제 dVRK MTM/haptic device가 아닌 보편적인 인터페이스 형식을 갖추고 있습니다.
+- SurRoL 기반 PSM model이 MjData qpos를 직접 수정하고 있으며, 온전한 dynamics simulator가 아닙니다.
 
 ## References
 
