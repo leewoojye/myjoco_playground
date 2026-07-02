@@ -6,25 +6,25 @@
 
 뼈대가 되는 기본 로봇시뮬레이터와 보다 자세한 기술적 설명은 다음 포스팅에서 확인 가능합니다. https://leewoojye.github.io/robotics/research/2026/06/03/myjoco3.html
 
-### dVRK PSM Needle Reach Teleoperation
+### How to use: dVRK PSM Needle Reach Teleoperation
 
-main entry file:
+conda environment를 생성하고 활성화합니다:
 
-```text
-sim_with_mujoco/demo/dvrk_psm_teleop_demo.py
+```bash
+conda create -n my_robotics python=3.12
+conda activate my_robotics
+```
+
+프로젝트 루트에서 dependency를 설치합니다:
+
+```bash
+pip install -r requirements.txt
 ```
 
 프로젝트 루트에서 다음 명령으로 GUI demo를 실행합니다:
 
 ```bash
 python -m sim_with_mujoco.demo.dvrk_psm_teleop_demo
-```
-
-demo는 기본적으로 SurRoL PSM model을 사용합니다:
-
-```text
-assets/robots/dvrk/scene_psm_surrol_needle_reach.xml
-assets/robots/dvrk/psm_surrol.xml
 ```
 
 현재는 needle reach task만을 수행한 상태이며 grasping, gauze retrieval, needle pickup task로까지의 확장을 목표로 하고 있습니다. PSM tool tip을 초록색 needle target 쪽으로 이동시키면서 shaft가 RCM constraint에서 크게 벗어나지 않도록 제어합니다.
@@ -44,21 +44,6 @@ assets/robots/dvrk/psm_surrol.xml
 
 좌측 상단 overlay에는 현재 task, action vector, tip error, RCM error가 표시됩니다.
 
-## Installation
-
-conda environment를 생성하고 활성화합니다:
-
-```bash
-conda create -n my_robotics python=3.12
-conda activate my_robotics
-```
-
-프로젝트 루트에서 dependency를 설치합니다:
-
-```bash
-pip install -r requirements.txt
-```
-
 ## Core Implementation
 
 | Area | Current implementation |
@@ -68,22 +53,23 @@ pip install -r requirements.txt
 | Teleoperation target | keyboard input을 현재 tool-tip pose 주변의 작은 task-space target increment로 변환 |
 | IK | solve_dvrk_rcm_ik에서 목표 world-frame tip target을 PSM RCM frame으로 변환한 뒤 yaw, pitch, insertion target 계산 |
 | Actuation | 안정적인 SurRoL teleoperation preview를 위해 active joint를 kinematic servo 방식으로 갱신 |
-| Mimic joints | 변환된 MJCF가 URDF mimic joint를 직접 표현하지 않으므로 pitch-linkage와 jaw visual joint를 Python에서 동기화 |
 | Metrics | surgical task utility를 통해 tip error, RCM error를 계산 |
 
 <!-- | Metrics | surgical task utility를 통해 tip error, RCM error, joint-limit margin, forbidden-contact count를 계산 | -->
+
+<!-- | Mimic joints | 변환된 MJCF가 URDF mimic joint를 직접 표현하지 않으므로 pitch-linkage와 jaw visual joint를 Python에서 동기화 | -->
 
 ## Simulator Structure
 
 ```text
 sim_with_mujoco/
   demo/
-    dvrk_psm_teleop_demo.py       dVRK PSM needle-reach teleoperation entry
+    dvrk_psm_teleop_demo.py       dVRK PSM teleoperation entry
   environment/
     env.py                        MuJoCo model/data/viewer wrapper
   tasks/surgical/
     safety_metrics.py             tip, RCM, joint-limit, contact metrics
-    target_sequence.py            timed reach-target sequence helper
+    target_sequence.py            timed target sequence helper
   utils/
     dvrk_ik.py                    dVRK RCM-frame PSM IK
     ik.py                         DLS multi-target IK
@@ -92,7 +78,7 @@ sim_with_mujoco/
     collision.py                  MuJoCo contact helpers
     mj.py                         MuJoCo id mapping helpers
   viewer/
-    surrol_keyboard_viewer.py     SurRoL-style keyboard preview viewer
+    surrol_keyboard_viewer.py     SurRoL keyboard preview viewer
     viewer.py                     generic MuJoCo viewer wrapper
 ```
 
