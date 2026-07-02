@@ -48,11 +48,10 @@ python -m sim_with_mujoco.demo.dvrk_psm_teleop_demo
 
 | Area | Current implementation |
 | --- | --- |
-| dVRK model | SurRoL psm_RL.urdf 기반 PSM chain을 MyJoCo MJCF naming, site, actuator 구조에 맞게 구성 |
 | Input viewer | SurRoL 방식 keyboard input을 제공하는 단순한 GLFW/MuJoCo viewer인 SurrolKeyboardViewer class 사용 |
-| Teleoperation target | keyboard input을 현재 tool-tip pose 주변의 작은 task-space target increment로 변환 |
-| IK | solve_dvrk_rcm_ik에서 목표 world-frame tip target을 PSM RCM frame으로 변환한 뒤 yaw, pitch, insertion target 계산 |
-| Actuation | 안정적인 SurRoL teleoperation preview를 위해 active joint를 kinematic servo 방식으로 갱신 |
+| Teleoperation target | 키 입력마다 tool-tip target 위치를 조금씩 누적 변경 |
+| RCM-aware Numerical IK | solve_dvrk_rcm_ik에서 목표 world-frame tip target을 RCM frame으로 변환한 뒤 yaw, pitch, insertion target 계산 |
+| Actuation | 안정적인 teleoperation을 위해 active joint를 kinematic servo 방식으로 갱신 (추후 개선할 부분) |
 | Metrics | surgical task utility를 통해 tip error, RCM error를 계산 |
 
 <!-- | Metrics | surgical task utility를 통해 tip error, RCM error, joint-limit margin, forbidden-contact count를 계산 | -->
