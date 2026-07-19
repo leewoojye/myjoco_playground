@@ -1,0 +1,78 @@
+<mujoco model="ecm">
+  <compiler angle="radian" boundmass="1e-08" boundinertia="1e-10" alignfree="true" />
+  <option timestep="0.002" iterations="80" integrator="implicitfast" />
+  <asset>
+    <mesh name="base_link" content_type="model/obj" file="meshes/visual/base_link.obj" />
+    <mesh name="yaw_link" content_type="model/obj" file="meshes/visual/yaw_link.obj" />
+    <mesh name="pitch_end_link" content_type="model/stl" file="meshes/visual/pitch_end_link.STL" />
+    <mesh name="main_insertion_link" content_type="model/stl" file="meshes/visual/main_insertion_link.STL" />
+    <mesh name="tool_link_1" content_type="model/obj" file="meshes/visual/tool_link_1.obj" />
+    <mesh name="tool_link" content_type="model/stl" file="meshes/collision/tool_link.STL" />
+    <mesh name="pitch_front_link" content_type="model/stl" file="meshes/visual/pitch_front_link.STL" />
+    <mesh name="pitch_bottom_link" content_type="model/stl" file="meshes/visual/pitch_bottom_link.STL" />
+    <mesh name="pitch_top_link" content_type="model/stl" file="meshes/visual/pitch_top_link.STL" />
+    <mesh name="pitch_back_link" content_type="model/stl" file="meshes/visual/pitch_back_link.STL" />
+  </asset>
+  <worldbody>
+    <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.95 0.95 0.95 1" mesh="base_link" />
+    <geom size="0.015" pos="0.6126 0 0.1016" quat="0.707107 0 0 -0.707107" contype="0" conaffinity="0" group="1" density="0" rgba="1 0 0 0.5" />
+    <body name="ecm_yaw_link" pos="0.6126 0 0.1016" quat="0.707107 0 -0.707107 0">
+      <inertial pos="-0.029 0 0.4327" quat="0.704016 -0.0660432 0.0660432 0.704016" mass="6.4168" diaginertia="0.00112403 0.00112403 0.00112403" />
+      <joint name="ecm_yaw_joint" pos="0 0 0" axis="0 0 1" range="-1.5708 1.5708" actuatorfrcrange="-100 100" damping="2" armature="0.02" frictionloss="0.01" />
+      <geom pos="0 0 0.5394" quat="0 0.707107 0.707107 0" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.95 0.95 0.95 1" mesh="yaw_link" />
+      <body name="ecm_pitch_end_link" quat="0.5 -0.5 -0.5 -0.5">
+        <inertial pos="0.0773202 0.292573 0.00079042" quat="-0.481871 0.517567 0.481787 0.5175" mass="1.60661" diaginertia="0.0379227 0.0374638 0.000939149" />
+        <joint name="ecm_pitch_end_joint" pos="0 0 0" axis="0 0 1" range="-0.784 1.158" actuatorfrcrange="-100 100" damping="2" armature="0.02" frictionloss="0.01" />
+        <geom pos="0.103 0.2868 0" quat="0 0 0 1" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.0314 0.0314 0.0314 1" mesh="pitch_end_link" />
+        <geom pos="0.103 0.2868 0" quat="0 0 0 1" type="mesh" rgba="0.0314 0.0314 0.0314 1" mesh="pitch_end_link" />
+        <body name="ecm_main_insertion_link" pos="0 0.3822 0" quat="0.707107 0.707107 0 0">
+          <inertial pos="0.0508919 0.000792275 -0.0349639" quat="-5.68674e-07 -0.0552451 -1.02779e-05 0.998473" mass="0.10076" diaginertia="0.00014273 0.000125085 2.60095e-05" />
+          <joint name="ecm_main_insertion_joint" pos="0 0 0" axis="0 0 1" type="slide" range="0 0.254" actuatorfrcrange="-50 50" damping="2" armature="0.02" frictionloss="0.01" />
+          <geom pos="0.061 0 0.0092" quat="0 0 0 1" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.0314 0.0314 0.0314 1" mesh="main_insertion_link" />
+          <geom pos="0.061 0 0.0092" quat="0 0 0 1" type="mesh" rgba="0.0314 0.0314 0.0314 1" mesh="main_insertion_link" />
+          <body name="ecm_tool_link" pos="0 0 0.3829">
+            <inertial pos="-0.000175498 0.000750871 -0.481392" quat="1 -0.000428739 0.000193793 0.000603273" mass="0.877414" diaginertia="0.00806451 0.00796635 0.000456048" />
+            <joint name="ecm_tool_joint" pos="0 0 0" axis="0 0 1" range="-1.5708 1.5708" actuatorfrcrange="-100 100" damping="2" armature="0.02" frictionloss="0.01" />
+            <geom pos="0 0 -0.3737" quat="0 0 0 1" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.8941 0.8941 0.8863 1" mesh="tool_link_1" />
+            <geom pos="0 0 -0.3737" quat="0 0 0 1" type="mesh" rgba="0.8941 0.8941 0.8863 1" mesh="tool_link" />
+          </body>
+        </body>
+      </body>
+      <body name="ecm_pitch_front_link" pos="0 0 0.3404" quat="0.5 -0.5 -0.5 -0.5">
+        <inertial pos="0.0306 0.1358 0" quat="0 0 0 1" mass="1.6069" diaginertia="1e-10 1e-10 1e-10" />
+        <joint name="ecm_pitch_front_joint" pos="0 0 0" axis="0 0 1" range="-0.784 1.158" actuatorfrcrange="-100 100" damping="2" armature="0.02" frictionloss="0.01" />
+        <geom pos="0 0 0" quat="0 0 0 1" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.0314 0.0314 0.0314 1" mesh="pitch_front_link" />
+        <body name="ecm_pitch_bottom_link" pos="0.103 0.2868 0">
+          <inertial pos="-0.1459 0.0267 0" quat="0.519941 0.519941 0.47923 0.47923" mass="0.3593" diaginertia="0.00302818 0.0029617 0.000220426" />
+          <joint name="ecm_pitch_bottom_joint" pos="0 0 0" axis="0 0 1" range="-1.158 0.784" actuatorfrcrange="-100 100" damping="2" armature="0.02" frictionloss="0.01" />
+          <geom pos="0 0 0" quat="0 0 0 1" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.0314 0.0314 0.0314 1" mesh="pitch_bottom_link" />
+        </body>
+        <body name="ecm_pitch_top_link" pos="0.1085 0.3242 0">
+          <inertial pos="-0.1702 0 0" quat="0 0 0 1" mass="0.4385" diaginertia="1e-10 1e-10 1e-10" />
+          <joint name="ecm_pitch_top_joint" pos="0 0 0" axis="0 0 1" range="-1.158 0.784" actuatorfrcrange="-100 100" damping="2" armature="0.02" frictionloss="0.01" />
+          <geom pos="0 0 0" quat="0 0 0 1" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.0314 0.0314 0.0314 1" mesh="pitch_top_link" />
+        </body>
+      </body>
+      <body name="ecm_pitch_back_link" pos="-0.0098 0 0.377" quat="0.5 -0.5 -0.5 -0.5">
+        <inertial pos="0.0329 0.15 0" quat="0 0 0 1" mass="0.4214" diaginertia="1e-10 1e-10 1e-10" />
+        <joint name="ecm_pitch_back_joint" pos="0 0 0" axis="0 0 1" range="-0.784 1.158" actuatorfrcrange="-100 100" damping="2" armature="0.02" frictionloss="0.01" />
+        <geom pos="0 0 0" quat="0 0 0 1" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.0314 0.0314 0.0314 1" mesh="pitch_back_link" />
+      </body>
+    </body>
+  </worldbody>
+  <contact>
+    <exclude body1="ecm_pitch_end_link" body2="ecm_tool_link" />
+  </contact>
+  <equality>
+    <joint name="eq_ecm_pitch_front_joint" joint1="ecm_pitch_front_joint" joint2="ecm_pitch_end_joint" polycoef="0 1 0 0 0" solref="0.005 1" />
+    <joint name="eq_ecm_pitch_bottom_joint" joint1="ecm_pitch_bottom_joint" joint2="ecm_pitch_end_joint" polycoef="0 -1 0 0 0" solref="0.005 1" />
+    <joint name="eq_ecm_pitch_top_joint" joint1="ecm_pitch_top_joint" joint2="ecm_pitch_end_joint" polycoef="0 -1 0 0 0" solref="0.005 1" />
+    <joint name="eq_ecm_pitch_back_joint" joint1="ecm_pitch_back_joint" joint2="ecm_pitch_end_joint" polycoef="0 1 0 0 0" solref="0.005 1" />
+  </equality>
+  <actuator>
+    <position name="ctrl_ecm_yaw_joint" joint="ecm_yaw_joint" kp="60" ctrlrange="-1.5708 1.5708" forcelimited="true" forcerange="-80 80" />
+    <position name="ctrl_ecm_pitch_end_joint" joint="ecm_pitch_end_joint" kp="60" ctrlrange="-0.784 1.158" forcelimited="true" forcerange="-80 80" />
+    <position name="ctrl_ecm_main_insertion_joint" joint="ecm_main_insertion_joint" kp="400" ctrlrange="0 0.254" forcelimited="true" forcerange="-120 120" />
+    <position name="ctrl_ecm_tool_joint" joint="ecm_tool_joint" kp="60" ctrlrange="-1.5708 1.5708" forcelimited="true" forcerange="-80 80" />
+  </actuator>
+</mujoco>

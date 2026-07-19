@@ -1,3 +1,3 @@
-from .planners import DvrkMPPIController
+from .planners import MPPIPlanner
 
-__all__ = ["DvrkMPPIController"]
+__all__ = ["MPPIPlanner"]

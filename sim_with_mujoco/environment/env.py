@@ -9,6 +9,11 @@ from sim_with_mujoco.utils.math3d import get_body_T
 from sim_with_mujoco.utils.mj import dof_ids_from_joints
 from sim_with_mujoco.viewer.viewer import Viewer
 
+import gymnasium as gym
+from gymnasium import spaces
+from sim_with_mujoco.utils.dvrk_ik import get_site_transform, solve_rcm_ik
+from sim_with_mujoco.utils.mj import joint_ids_from_names
+
 
 class Environment:
     # MjModel, MjData
@@ -58,13 +63,13 @@ class Environment:
         qadr = self.model.jnt_qposadr[joint_id]
         dadr = self.model.jnt_dofadr[joint_id]
 
-        if is_kinematic: # 키네마틱 모드면 data.qpos만 처리
+        if is_kinematic:  # 키네마틱 모드면 data.qpos만 처리
             self.data.qpos[qadr] = q_des
             return
 
         if self.model.actuator_biastype[actuator_id] != mujoco.mjtBias.mjBIAS_NONE:
             ctrl = q_des
-        else: # 추후 수정
+        else:  # 추후 수정
             ctrl = kp * (q_des - self.data.qpos[qadr]) - kd * self.data.qvel[dadr]
 
         if self.model.actuator_ctrllimited[actuator_id]:
@@ -202,97 +207,81 @@ class Environment:
         return twist_error
 
 
-import gymnasium as gym
-from gymnasium import spaces
-
-from sim_with_mujoco.utils.dvrk_ik import get_site_transform, solve_dvrk_rcm_ik
-from sim_with_mujoco.utils.mj import joint_ids_from_names
-
-
 class DvrkEnv(gym.Env):
-    """Minimal Gymnasium environment for dVRK PSM needle reaching."""
-
     JOINT_NAMES = (
-        "psm_yaw",
-        "psm_pitch",
-        "psm_insertion",
-        "psm_roll",
-        "psm_wrist_pitch",
-        "psm_wrist_yaw",
+        "p_psm_yaw_joint",
+        "p_psm_pitch_end_joint",
+        "p_psm_main_insertion_joint",
+        "p_psm_tool_roll_joint",
+        "p_psm_tool_pitch_joint",
+        "p_psm_tool_yaw_joint",
     )
-    INITIAL_QPOS = {
-        "psm_yaw": 0.18,
-        "psm_pitch": 0.08,
-        "psm_insertion": 0.07,
-        "psm_roll": 0.0,
-        "psm_wrist_pitch": 0.0,
-        "psm_wrist_yaw": 0.0,
-        "psm_jaw": 0.15,
+    ARM_ACTUATOR_NAMES = (
+        "p_ctrl_psm_yaw_joint",
+        "p_ctrl_psm_pitch_back_joint",
+        "p_ctrl_psm_main_insertion_joint",
+        "p_ctrl_psm_tool_roll_joint",
+        "p_ctrl_psm_tool_pitch_joint",
+        "p_ctrl_psm_tool_yaw_joint",
+    )
+    INITIAL_CTRL = {
+        **dict(zip(ARM_ACTUATOR_NAMES, (0.18, 0.08, 0.20, 0.0, 0.0, 0.0))),
+        "p_ctrl_psm_tool_gripper2_joint": 0.15,
+        "e_ctrl_ecm_yaw_joint": 0.0,
+        "e_ctrl_ecm_pitch_end_joint": 0.0,
+        "e_ctrl_ecm_main_insertion_joint": 0.10,
+        "e_ctrl_ecm_tool_joint": 0.0,
     }
-    MIMICS = (
-        ("psm_pitch_2", "psm_pitch", -1.0),
-        ("psm_pitch_3", "psm_pitch", 1.0),
-        ("psm_pitch_back", "psm_pitch", 1.0),
-        ("psm_pitch_bottom", "psm_pitch", -1.0),
-        ("psm_pitch_top", "psm_pitch", -1.0),
-        ("psm_pitch_front", "psm_pitch", 1.0),
-        ("psm_jaw_1", "psm_jaw", 0.5),
-        ("psm_jaw_2", "psm_jaw", 0.5),
-    )
 
-    def __init__(self, xml_path, action_scale=0.004, max_steps=100, tolerance=0.008):
+    def __init__(self, xml_path, action_scale=0.004, max_steps=100, tolerance=0.008, control_steps=10):
         super().__init__()
-        self.plant = Environment(xml_path, "psm_tool_tip")
+        self.plant = Environment(xml_path, "p_psm_tool_yaw_link")
         self.model, self.data = self.plant.model, self.plant.data
         self.action_scale = float(action_scale)
         self.max_steps = int(max_steps)
         self.tolerance = float(tolerance)
+        self.control_steps = int(control_steps)
         self.action_space = spaces.Box(-1.0, 1.0, shape=(3,), dtype=np.float32)
         self.observation_space = spaces.Box(-np.inf, np.inf, shape=(3,), dtype=np.float32)
 
-        self.tip_site_id = self._id(mujoco.mjtObj.mjOBJ_SITE, "psm_tool_tip_site")
-        self.target_site_id = self._id(mujoco.mjtObj.mjOBJ_SITE, "needle_reach_target")
-        self.rcm_site_id = self._id(mujoco.mjtObj.mjOBJ_SITE, "psm_rcm_site")
+        self.tip_site_id = self.get_id(mujoco.mjtObj.mjOBJ_SITE, "p_psm_tool_tip_site")
+        self.target_site_id = self.get_id(mujoco.mjtObj.mjOBJ_SITE, "needle_reach_target")
+        self.rcm_site_id = self.get_id(mujoco.mjtObj.mjOBJ_SITE, "p_psm_rcm_site")
         self.joint_ids = joint_ids_from_names(self.model, self.JOINT_NAMES)
-        self.mimics = []
-        for passive, driver, multiplier in self.MIMICS:
-            passive_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, passive)
-            driver_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, driver)
-            if passive_id != -1 and driver_id != -1:
-                self.mimics.append((passive_id, driver_id, multiplier, 0.0))
+        self.arm_actuator_ids = [self.get_id(mujoco.mjtObj.mjOBJ_ACTUATOR, name) for name in self.ARM_ACTUATOR_NAMES]
+        self.initial_ctrl = {
+            self.get_id(mujoco.mjtObj.mjOBJ_ACTUATOR, name): value for name, value in self.INITIAL_CTRL.items()
+        }
         self.step_count = 0
 
-    def _id(self, object_type, name):
+    def get_id(self, object_type, name):
         object_id = mujoco.mj_name2id(self.model, object_type, name)
         if object_id == -1:
             raise ValueError(f"Unknown MuJoCo object: {name}")
         return object_id
 
-    def _sync_mimics(self):
-        for passive_id, driver_id, multiplier, offset in self.mimics:
-            self.data.qpos[self.model.jnt_qposadr[passive_id]] = (
-                offset + multiplier * self.data.qpos[self.model.jnt_qposadr[driver_id]]
-            )
-
-    def _observation(self):
+    def get_observation(self):
         error = self.data.site_xpos[self.target_site_id] - self.data.site_xpos[self.tip_site_id]
         return error.astype(np.float32)
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
         mujoco.mj_resetData(self.model, self.data)
-        self.plant.initial_qpos(self.INITIAL_QPOS)
-        self._sync_mimics()
-        mujoco.mj_forward(self.model, self.data)
+        for alpha in np.linspace(0.0, 1.0, 200):
+            for actuator_id, target_qpos in self.initial_ctrl.items():
+                self.data.ctrl[actuator_id] = alpha * target_qpos
+            self.plant.step()
+        self.plant.step(300)
+        self.data.time = 0.0
         self.rcm_pos = self.data.site_xpos[self.rcm_site_id].copy()
         self.step_count = 0
-        return self._observation(), {}
+        return self.get_observation(), {}
 
     def step(self, action):
         action = np.clip(np.asarray(action, dtype=float), -1.0, 1.0)
         target_T = get_site_transform(self.data, self.tip_site_id)
         target_T[:3, 3] += self.action_scale * action
-        q_des = solve_dvrk_rcm_ik(
+        q_des = solve_rcm_ik(
             self.model,
             self.data,
             target_T,
@@ -300,18 +289,18 @@ class DvrkEnv(gym.Env):
             self.rcm_pos,
             self.joint_ids,
             dq_limit=0.035,
-            joint_mimics=self.mimics,
+            rcm_site_id=self.rcm_site_id,
         )
-        for joint_id in self.joint_ids:
+        for joint_id, actuator_id in zip(self.joint_ids, self.arm_actuator_ids):
             qpos_id = self.model.jnt_qposadr[joint_id]
-            self.data.qpos[qpos_id] = q_des[qpos_id]
-        self._sync_mimics()
-        self.data.qvel[:] = 0.0
-        mujoco.mj_forward(self.model, self.data)
-        self.data.time += self.model.opt.timestep
+            target_qpos = q_des[qpos_id]
+            if self.model.actuator_ctrllimited[actuator_id]:
+                target_qpos = np.clip(target_qpos, *self.model.actuator_ctrlrange[actuator_id])
+            self.data.ctrl[actuator_id] = target_qpos
+        self.plant.step(self.control_steps)
 
         self.step_count += 1
-        observation = self._observation()
+        observation = self.get_observation()
         tip_error = float(np.linalg.norm(observation))
         terminated = tip_error <= self.tolerance
         truncated = self.step_count >= self.max_steps

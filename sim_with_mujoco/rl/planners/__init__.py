@@ -1,3 +1,3 @@
-from .mppi_pytorch import DvrkMPPIController
+from .mppi_pytorch import MPPIPlanner
 
-__all__ = ["DvrkMPPIController"]
+__all__ = ["MPPIPlanner"]

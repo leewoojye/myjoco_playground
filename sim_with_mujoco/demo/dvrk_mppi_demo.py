@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from sim_with_mujoco.rl import DvrkMPPIController
+from sim_with_mujoco.rl import MPPIPlanner
 from sim_with_mujoco.environment.env import DvrkEnv
 
 
@@ -9,8 +9,8 @@ XML_PATH = ROOT_DIR / "assets" / "robots" / "dvrk" / "scene_psm_surrol_needle_re
 
 
 def main():
-    env = DvrkEnv(XML_PATH)
-    controller = DvrkMPPIController(action_scale=env.action_scale)
+    env = DvrkEnv(XML_PATH, control_steps=10)
+    controller = MPPIPlanner(action_scale=env.action_scale)
     observation, _ = env.reset()
 
     for step in range(env.max_steps):

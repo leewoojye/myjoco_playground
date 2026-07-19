@@ -1,0 +1,107 @@
+<mujoco model="psm">
+  <compiler angle="radian" boundmass="1e-08" boundinertia="1e-10" alignfree="true" />
+  <option timestep="0.002" iterations="80" integrator="implicitfast" />
+  <asset>
+    <mesh name="base_link" content_type="model/stl" file="meshes/visual/base_link.STL" />
+    <mesh name="yaw_link" content_type="model/stl" file="meshes/visual/yaw_link.STL" />
+    <mesh name="pitch_end_link" content_type="model/stl" file="meshes/visual/pitch_end_link.STL" />
+    <mesh name="main_insertion_link_1" content_type="model/obj" file="meshes/visual/main_insertion_link_1.obj" />
+    <mesh name="tool_roll_link" content_type="model/stl" file="meshes/visual/tool_roll_link.STL" />
+    <mesh name="wrist" content_type="model/obj" file="meshes/visual/wrist.obj" scale="0.001 0.001 0.001" />
+    <mesh name="tool_gripper1_link_wide" content_type="model/obj" file="meshes/visual/tool_gripper1_link_wide.obj" />
+    <mesh name="tool_gripper2_link_wide" content_type="model/obj" file="meshes/visual/tool_gripper2_link_wide.obj" />
+    <mesh name="pitch_back_link" content_type="model/stl" file="meshes/visual/pitch_back_link.STL" />
+    <mesh name="pitch_bottom_link" content_type="model/stl" file="meshes/visual/pitch_bottom_link.STL" />
+    <mesh name="pitch_top_link" content_type="model/stl" file="meshes/visual/pitch_top_link.STL" />
+    <mesh name="pitch_front_link" content_type="model/stl" file="meshes/visual/pitch_front_link.STL" />
+    <mesh name="main_insertion_link_2" content_type="model/obj" file="meshes/visual/main_insertion_link_2.obj" />
+    <mesh name="main_insertion_link_3" content_type="model/obj" file="meshes/visual/main_insertion_link_3.obj" />
+  </asset>
+  <worldbody>
+    <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.95 0.95 0.95 1" mesh="base_link" />
+    <geom size="0.015" pos="0 0.4864 0" contype="0" conaffinity="0" group="1" density="0" rgba="1 0 0 0.5" />
+    <body name="psm_yaw_link" pos="0 0.4864 0" quat="0.5 0.5 -0.5 0.5">
+      <inertial pos="-0.038769 0 0.527996" mass="1.4705" diaginertia="1e-10 1e-10 1e-10" />
+      <joint name="psm_yaw_joint" pos="0 0 0" axis="0 0 1" range="-1.5883 1.5883" actuatorfrcrange="-200 200" damping="2" armature="0.02" frictionloss="0.01" />
+      <geom pos="0 0 0.4864" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.95 0.95 0.95 1" mesh="yaw_link" />
+      <body name="psm_pitch_end_link" quat="0.5 -0.5 -0.5 -0.5">
+        <inertial pos="0.0442293 0.27985 0" mass="2.091" diaginertia="1e-10 1e-10 1e-10" />
+        <joint name="psm_pitch_end_joint" pos="0 0 0" axis="0 0 1" range="-0.9251 0.9251" actuatorfrcrange="-200 200" damping="2" armature="0.02" frictionloss="0.01" />
+        <geom pos="0.0423 0.14372 0" quat="0 0 0 1" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.9843 0.8863 0.3176 1" mesh="pitch_end_link" />
+        <body name="psm_main_insertion_link" pos="0 0.4318 0" quat="0.707107 0.707107 0 0">
+          <inertial pos="-0.00010934 -0.0040563 0.0098616" mass="0.22491" diaginertia="3.02274e-10 3.01945e-10 3.00329e-10" />
+          <joint name="psm_main_insertion_joint" pos="0 0 0" axis="0 0 1" type="slide" range="0 0.24" actuatorfrcrange="-200 200" damping="2" armature="0.02" frictionloss="0.01" />
+          <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="1 0.77 0.03 1" mesh="main_insertion_link_1" />
+          <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.8 0.8 0.8 1" mesh="main_insertion_link_2" />
+          <geom pos="0 0 -0.14" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.0314 0.0314 0.0314 1" mesh="main_insertion_link_3" />
+          <body name="psm_tool_roll_link" pos="0 0 0.4162">
+            <inertial pos="-7.72306e-06 -9.63802e-07 -0.00518201" quat="0.000796327 0 1 0" mass="0.000445715" diaginertia="5.57552e-09 4.60588e-09 3.90399e-09" />
+            <joint name="psm_tool_roll_joint" pos="0 0 0" axis="0 0 1" range="-4.5379 4.5379" actuatorfrcrange="-200 200" damping="2" armature="0.02" frictionloss="0.01" />
+            <geom pos="0 0 -0.01" quat="0.000796327 0 1 0" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.792157 0.819608 0.933333 1" mesh="tool_roll_link" />
+            <geom pos="0 0 -0.01" quat="0.000796327 0 1 0" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="tool_roll_link" />
+            <body name="psm_tool_pitch_link" quat="0.5 -0.5 -0.5 -0.5">
+              <inertial pos="-0.00600357 1.446e-05 1.27994e-05" quat="0.500398 -0.5 -0.499602 0.5" mass="0.000472721" diaginertia="4.95688e-09 5.6197e-09 2.23393e-09" />
+              <joint name="psm_tool_pitch_joint" pos="0 0 0" axis="0 0 1" range="-1.3963 1.3963" actuatorfrcrange="-200 200" damping="2" armature="0.02" frictionloss="0.01" />
+              <geom quat="0.500398 -0.5 -0.499602 0.5" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.792157 0.819608 0.933333 1" mesh="wrist" />
+              <geom pos="-0.01 0 0" quat="0.500398 -0.5 -0.499602 0.5" type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="wrist" />
+              <body name="psm_tool_yaw_link" pos="0.0091 0 0" quat="0.5 -0.5 -0.5 -0.5">
+                <inertial pos="0 0.0051 0" quat="0.707107 0.707107 0 0" mass="0.2" diaginertia="5.2022e-06 5.2022e-06 2e-10" />
+                <joint name="psm_tool_yaw_joint" pos="0 0 0" axis="0 0 1" range="-1.3963 1.3963" actuatorfrcrange="-200 200" damping="2" armature="0.02" frictionloss="0.01" />
+                <body name="psm_tool_gripper1_link">
+                  <inertial pos="0.0007 0.0051 0" mass="2.5704e-05" diaginertia="2.29794e-10 1e-10 2.27052e-10" />
+                  <joint name="psm_tool_gripper1_joint" pos="0 0 0" axis="0 0 1" range="-1 1" actuatorfrcrange="-200 200" damping="2" armature="0.02" frictionloss="0.01" />
+                  <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.792157 0.819608 0.933333 1" mesh="tool_gripper1_link_wide" />
+                  <geom size="0.0007 0.0051 0.0009" pos="0.0007 0.0051 0" type="box" rgba="0.792157 0.819608 0.933333 1" />
+                </body>
+                <body name="psm_tool_gripper2_link">
+                  <inertial pos="-0.0007 0.0051 0" mass="2.5704e-05" diaginertia="2.29794e-10 1e-10 2.27052e-10" />
+                  <joint name="psm_tool_gripper2_joint" pos="0 0 0" axis="0 0 1" range="-1 1" actuatorfrcrange="-200 200" damping="2" armature="0.02" frictionloss="0.01" />
+                  <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.792157 0.819608 0.933333 1" mesh="tool_gripper2_link_wide" />
+                  <geom size="0.0007 0.0051 0.0009" pos="-0.0007 0.0051 0" type="box" rgba="0.792157 0.819608 0.933333 1" />
+                </body>
+                <site name="psm_tool_tip_site" pos="0 0.0102 0" quat="0.5 -0.5 -0.5 -0.5" size="0.006" rgba="1 0.25 0.1 1" />
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="psm_pitch_back_link" pos="0 0 0.516" quat="0.699667 -0.699667 -0.102307 -0.102307">
+        <inertial pos="-0.011651 -0.036241 0" mass="0.98494" diaginertia="1e-10 1e-10 1e-10" />
+        <joint name="psm_pitch_back_joint" pos="0 0 0" axis="0 0 1" range="-0.93556 0.94249" actuatorfrcrange="-200 200" damping="2" armature="0.02" frictionloss="0.01" />
+        <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.0314 0.0314 0.0314 1" mesh="pitch_back_link" />
+        <body name="psm_pitch_bottom_link" pos="0.15 0 0" quat="0.59736 0 0 0.801973">
+          <inertial pos="0.25683 -0.010348 0" mass="0.44569" diaginertia="1e-10 1e-10 1e-10" />
+          <joint name="psm_pitch_bottom_joint" pos="0 0 0" axis="0 0 1" range="-0.94249 0.93556" actuatorfrcrange="-200 200" damping="2" armature="0.02" frictionloss="0.01" />
+          <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.0314 0.0314 0.0314 1" mesh="pitch_bottom_link" />
+        </body>
+        <body name="psm_pitch_top_link" pos="0.18366 0.014121 0" quat="0.59736 0 0 0.801973">
+          <inertial pos="0.31246 -0.00056566 0" mass="0.17841" diaginertia="1e-10 1e-10 1e-10" />
+          <joint name="psm_pitch_top_joint" pos="0 0 0" axis="0 0 1" range="-0.94249 0.93556" actuatorfrcrange="-200 200" damping="2" armature="0.02" frictionloss="0.01" />
+          <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.0314 0.0314 0.0314 1" mesh="pitch_top_link" />
+        </body>
+      </body>
+      <body name="psm_pitch_front_link" pos="0 0 0.42" quat="0.699667 -0.699667 -0.102307 -0.102307">
+        <inertial pos="0.096269 0 0.047551" mass="0.074425" diaginertia="1e-10 1e-10 1e-10" />
+        <joint name="psm_pitch_front_joint" pos="0 0 0" axis="0 0 1" range="-0.93556 0.94249" actuatorfrcrange="-200 200" damping="2" armature="0.02" frictionloss="0.01" />
+        <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.0314 0.0314 0.0314 1" mesh="pitch_front_link" />
+      </body>
+    </body>
+    <site name="psm_rcm_site" pos="0 0.4864 0" size="0.008" rgba="0 0.85 0.35 1" />
+  </worldbody>
+  <equality>
+    <joint name="eq_psm_pitch_end_joint" joint1="psm_pitch_end_joint" joint2="psm_pitch_back_joint" polycoef="0 1 0 0 0" solref="0.005 1" />
+    <joint name="eq_psm_tool_gripper1_joint" joint1="psm_tool_gripper1_joint" joint2="psm_tool_gripper2_joint" polycoef="0 -1 0 0 0" solref="0.005 1" />
+    <joint name="eq_psm_pitch_bottom_joint" joint1="psm_pitch_bottom_joint" joint2="psm_pitch_back_joint" polycoef="0 -1 0 0 0" solref="0.005 1" />
+    <joint name="eq_psm_pitch_top_joint" joint1="psm_pitch_top_joint" joint2="psm_pitch_back_joint" polycoef="0 -1 0 0 0" solref="0.005 1" />
+    <joint name="eq_psm_pitch_front_joint" joint1="psm_pitch_front_joint" joint2="psm_pitch_back_joint" polycoef="0 1 0 0 0" solref="0.005 1" />
+  </equality>
+  <actuator>
+    <position name="ctrl_psm_yaw_joint" joint="psm_yaw_joint" kp="60" ctrlrange="-1.5883 1.5883" forcelimited="true" forcerange="-80 80" />
+    <position name="ctrl_psm_pitch_back_joint" joint="psm_pitch_back_joint" kp="60" ctrlrange="-0.93556 0.94249" forcelimited="true" forcerange="-80 80" />
+    <position name="ctrl_psm_main_insertion_joint" joint="psm_main_insertion_joint" kp="400" ctrlrange="0 0.24" forcelimited="true" forcerange="-120 120" />
+    <position name="ctrl_psm_tool_roll_joint" joint="psm_tool_roll_joint" kp="60" ctrlrange="-4.5379 4.5379" forcelimited="true" forcerange="-80 80" />
+    <position name="ctrl_psm_tool_pitch_joint" joint="psm_tool_pitch_joint" kp="60" ctrlrange="-1.3963 1.3963" forcelimited="true" forcerange="-80 80" />
+    <position name="ctrl_psm_tool_yaw_joint" joint="psm_tool_yaw_joint" kp="60" ctrlrange="-1.3963 1.3963" forcelimited="true" forcerange="-80 80" />
+    <position name="ctrl_psm_tool_gripper2_joint" joint="psm_tool_gripper2_joint" kp="15" ctrlrange="-1 1" forcelimited="true" forcerange="-20 20" />
+  </actuator>
+</mujoco>

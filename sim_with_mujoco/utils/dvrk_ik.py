@@ -6,17 +6,13 @@ from sim_with_mujoco.utils.math3d import get_body_T
 
 
 DOF = 6
-EEF_BODY_NAMES = ("psm_wrist_yaw_link", "psm_tool_yaw_link")
-RCM_SITE_NAME = "psm_rcm_site"
 
-TOOL_T_TIP = np.array(
-    [
-        [0.0, -1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [-1.0, 0.0, 0.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ]
-)
+TOOL_T_TIP = np.array([
+    [0.0, -1.0, 0.0, 0.0],
+    [0.0, 0.0, 1.0, 0.0],
+    [-1.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 1.0],
+])
 
 
 def get_site_transform(data, site_id):
@@ -33,11 +29,10 @@ def _pose_transform(pose, mat, premultiply=True):
     return T @ mat
 
 
-def _get_world_T_rcm(model, data, rcm_pos):
+def _get_world_T_rcm(data, rcm_pos, rcm_site_id=None):
     T = np.eye(4)
     T[:3, 3] = rcm_pos
-    rcm_site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, RCM_SITE_NAME)
-    if rcm_site_id != -1:
+    if rcm_site_id is not None:
         T[:3, 3] = data.site_xpos[rcm_site_id]
         T[:3, :3] = data.site_xmat[rcm_site_id].reshape(3, 3)
     return T
@@ -72,24 +67,7 @@ def shaft_rcm_error(model, data, shaft_start_site_id, shaft_end_site_id, rcm_pos
     return error, closest, None
 
 
-def _mimic_specs(joint_mimics):
-    specs = []
-    for mimic in joint_mimics or []:
-        if len(mimic) == 3:
-            passive_joint_id, driver_joint_id, multiplier = mimic
-            offset = 0.0
-        else:
-            passive_joint_id, driver_joint_id, multiplier, offset = mimic
-        specs.append((int(passive_joint_id), int(driver_joint_id), float(multiplier), float(offset)))
-    return specs
-
-
-def _sync_mimic_qpos(model, qpos, mimic_specs):
-    for passive_joint_id, driver_joint_id, multiplier, offset in mimic_specs:
-        qpos[model.jnt_qposadr[passive_joint_id]] = offset + multiplier * qpos[model.jnt_qposadr[driver_joint_id]]
-
-
-def solve_dvrk_rcm_ik(
+def solve_rcm_ik(
     model,
     data,
     target_T,
@@ -98,29 +76,21 @@ def solve_dvrk_rcm_ik(
     joint_ids,
     q_home=None,
     dq_limit=0.025,
-    joint_mimics=None,
+    rcm_site_id=None,
 ):
     del q_home
     joint_ids = np.asarray(joint_ids, dtype=int)
-    mimic_specs = _mimic_specs(joint_mimics)
-
-    for body_name in EEF_BODY_NAMES:
-        body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
-        if body_id != -1:
-            break
-    else:
-        raise ValueError(f"Unknown body: {EEF_BODY_NAMES[0]}")
+    body_id = int(model.site_bodyid[tip_site_id])
 
     ik_data = mujoco.MjData(model)
     mujoco.mj_copyData(ik_data, model, data)
-    _sync_mimic_qpos(model, ik_data.qpos, mimic_specs)
     mujoco.mj_forward(model, ik_data)
 
     world_T_eef = get_body_T(ik_data, body_id)
     world_T_tip = get_site_transform(ik_data, tip_site_id)
     eef_T_tip = np.linalg.inv(world_T_eef) @ world_T_tip
     tip_T_eef = np.linalg.inv(eef_T_tip)
-    world_T_rcm = _get_world_T_rcm(model, ik_data, rcm_pos)
+    world_T_rcm = _get_world_T_rcm(ik_data, rcm_pos, rcm_site_id)
 
     # target tip pose를 RCM frame action으로 변환한 뒤 IK 계산 (SurRoL 방식)
     pose_eef = _pose_transform(target_T, tip_T_eef, premultiply=False)
@@ -144,16 +114,10 @@ def solve_dvrk_rcm_ik(
         check_collision=False,
     )
 
-    ik_data.qpos[:] = q_next
-    _sync_mimic_qpos(model, ik_data.qpos, mimic_specs)
-    mujoco.mj_forward(model, ik_data)
-
-    q_next = ik_data.qpos.copy()
     if dq_limit is not None:
         for joint_id in joint_ids[:DOF]:
             qadr = model.jnt_qposadr[int(joint_id)]
             delta = np.clip(q_next[qadr] - data.qpos[qadr], -float(dq_limit), float(dq_limit))
             q_next[qadr] = data.qpos[qadr] + delta
 
-    _sync_mimic_qpos(model, q_next, mimic_specs)
     return q_next
