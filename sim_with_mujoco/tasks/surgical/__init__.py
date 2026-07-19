@@ -1,3 +1,9 @@
-from sim_with_mujoco.tasks.surgical.target_sequence import SurgicalReachTarget, SurgicalTargetSequence
+from .safety_metrics import SurgicalSafetyMetrics, compute_surgical_metrics
+from .target_sequence import SurgicalReachTarget, SurgicalTargetSequence
 
-__all__ = ["SurgicalReachTarget", "SurgicalTargetSequence"]
+__all__ = [
+    "SurgicalReachTarget",
+    "SurgicalSafetyMetrics",
+    "SurgicalTargetSequence",
+    "compute_surgical_metrics",
+]

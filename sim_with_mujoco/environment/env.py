@@ -1,6 +1,5 @@
 # dm_control Physics / robosuite MujocoEnv
 
-from typing import Callable, NamedTuple, Optional, Union
 import mujoco
 import numpy as np
 from sim.model.kinematics.ik import calculate_twist_error
@@ -201,3 +200,119 @@ class Environment:
         _, twist_error = calculate_twist_error(T, target_T)
 
         return twist_error
+
+
+import gymnasium as gym
+from gymnasium import spaces
+
+from sim_with_mujoco.utils.dvrk_ik import get_site_transform, solve_dvrk_rcm_ik
+from sim_with_mujoco.utils.mj import joint_ids_from_names
+
+
+class DvrkEnv(gym.Env):
+    """Minimal Gymnasium environment for dVRK PSM needle reaching."""
+
+    JOINT_NAMES = (
+        "psm_yaw",
+        "psm_pitch",
+        "psm_insertion",
+        "psm_roll",
+        "psm_wrist_pitch",
+        "psm_wrist_yaw",
+    )
+    INITIAL_QPOS = {
+        "psm_yaw": 0.18,
+        "psm_pitch": 0.08,
+        "psm_insertion": 0.07,
+        "psm_roll": 0.0,
+        "psm_wrist_pitch": 0.0,
+        "psm_wrist_yaw": 0.0,
+        "psm_jaw": 0.15,
+    }
+    MIMICS = (
+        ("psm_pitch_2", "psm_pitch", -1.0),
+        ("psm_pitch_3", "psm_pitch", 1.0),
+        ("psm_pitch_back", "psm_pitch", 1.0),
+        ("psm_pitch_bottom", "psm_pitch", -1.0),
+        ("psm_pitch_top", "psm_pitch", -1.0),
+        ("psm_pitch_front", "psm_pitch", 1.0),
+        ("psm_jaw_1", "psm_jaw", 0.5),
+        ("psm_jaw_2", "psm_jaw", 0.5),
+    )
+
+    def __init__(self, xml_path, action_scale=0.004, max_steps=100, tolerance=0.008):
+        super().__init__()
+        self.plant = Environment(xml_path, "psm_tool_tip")
+        self.model, self.data = self.plant.model, self.plant.data
+        self.action_scale = float(action_scale)
+        self.max_steps = int(max_steps)
+        self.tolerance = float(tolerance)
+        self.action_space = spaces.Box(-1.0, 1.0, shape=(3,), dtype=np.float32)
+        self.observation_space = spaces.Box(-np.inf, np.inf, shape=(3,), dtype=np.float32)
+
+        self.tip_site_id = self._id(mujoco.mjtObj.mjOBJ_SITE, "psm_tool_tip_site")
+        self.target_site_id = self._id(mujoco.mjtObj.mjOBJ_SITE, "needle_reach_target")
+        self.rcm_site_id = self._id(mujoco.mjtObj.mjOBJ_SITE, "psm_rcm_site")
+        self.joint_ids = joint_ids_from_names(self.model, self.JOINT_NAMES)
+        self.mimics = []
+        for passive, driver, multiplier in self.MIMICS:
+            passive_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, passive)
+            driver_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, driver)
+            if passive_id != -1 and driver_id != -1:
+                self.mimics.append((passive_id, driver_id, multiplier, 0.0))
+        self.step_count = 0
+
+    def _id(self, object_type, name):
+        object_id = mujoco.mj_name2id(self.model, object_type, name)
+        if object_id == -1:
+            raise ValueError(f"Unknown MuJoCo object: {name}")
+        return object_id
+
+    def _sync_mimics(self):
+        for passive_id, driver_id, multiplier, offset in self.mimics:
+            self.data.qpos[self.model.jnt_qposadr[passive_id]] = (
+                offset + multiplier * self.data.qpos[self.model.jnt_qposadr[driver_id]]
+            )
+
+    def _observation(self):
+        error = self.data.site_xpos[self.target_site_id] - self.data.site_xpos[self.tip_site_id]
+        return error.astype(np.float32)
+
+    def reset(self, *, seed=None, options=None):
+        super().reset(seed=seed)
+        mujoco.mj_resetData(self.model, self.data)
+        self.plant.initial_qpos(self.INITIAL_QPOS)
+        self._sync_mimics()
+        mujoco.mj_forward(self.model, self.data)
+        self.rcm_pos = self.data.site_xpos[self.rcm_site_id].copy()
+        self.step_count = 0
+        return self._observation(), {}
+
+    def step(self, action):
+        action = np.clip(np.asarray(action, dtype=float), -1.0, 1.0)
+        target_T = get_site_transform(self.data, self.tip_site_id)
+        target_T[:3, 3] += self.action_scale * action
+        q_des = solve_dvrk_rcm_ik(
+            self.model,
+            self.data,
+            target_T,
+            self.tip_site_id,
+            self.rcm_pos,
+            self.joint_ids,
+            dq_limit=0.035,
+            joint_mimics=self.mimics,
+        )
+        for joint_id in self.joint_ids:
+            qpos_id = self.model.jnt_qposadr[joint_id]
+            self.data.qpos[qpos_id] = q_des[qpos_id]
+        self._sync_mimics()
+        self.data.qvel[:] = 0.0
+        mujoco.mj_forward(self.model, self.data)
+        self.data.time += self.model.opt.timestep
+
+        self.step_count += 1
+        observation = self._observation()
+        tip_error = float(np.linalg.norm(observation))
+        terminated = tip_error <= self.tolerance
+        truncated = self.step_count >= self.max_steps
+        return observation, -tip_error, terminated, truncated, {"tip_error": tip_error}
