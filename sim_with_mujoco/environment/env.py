@@ -208,34 +208,20 @@ class Environment:
 
 
 class DvrkEnv(gym.Env):
+    HOME_KEYFRAME = "dvrk_home"
     JOINT_NAMES = (
-        "p_psm_yaw_joint",
-        "p_psm_pitch_end_joint",
-        "p_psm_main_insertion_joint",
-        "p_psm_tool_roll_joint",
-        "p_psm_tool_pitch_joint",
-        "p_psm_tool_yaw_joint",
+        "PSM1_yaw",
+        "PSM1_pitch",
+        "PSM1_insertion",
+        "PSM1_roll",
+        "PSM1_wrist_pitch",
+        "PSM1_wrist_yaw",
     )
-    ARM_ACTUATOR_NAMES = (
-        "p_ctrl_psm_yaw_joint",
-        "p_ctrl_psm_pitch_back_joint",
-        "p_ctrl_psm_main_insertion_joint",
-        "p_ctrl_psm_tool_roll_joint",
-        "p_ctrl_psm_tool_pitch_joint",
-        "p_ctrl_psm_tool_yaw_joint",
-    )
-    INITIAL_CTRL = {
-        **dict(zip(ARM_ACTUATOR_NAMES, (0.18, 0.08, 0.20, 0.0, 0.0, 0.0))),
-        "p_ctrl_psm_tool_gripper2_joint": 0.15,
-        "e_ctrl_ecm_yaw_joint": 0.0,
-        "e_ctrl_ecm_pitch_end_joint": 0.0,
-        "e_ctrl_ecm_main_insertion_joint": 0.10,
-        "e_ctrl_ecm_tool_joint": 0.0,
-    }
+    ARM_ACTUATOR_NAMES = JOINT_NAMES
 
     def __init__(self, xml_path, action_scale=0.004, max_steps=100, tolerance=0.008, control_steps=10):
         super().__init__()
-        self.plant = Environment(xml_path, "p_psm_tool_yaw_link")
+        self.plant = Environment(xml_path, "PSM1_tool_wrist_sca_ee_link")
         self.model, self.data = self.plant.model, self.plant.data
         self.action_scale = float(action_scale)
         self.max_steps = int(max_steps)
@@ -244,14 +230,12 @@ class DvrkEnv(gym.Env):
         self.action_space = spaces.Box(-1.0, 1.0, shape=(3,), dtype=np.float32)
         self.observation_space = spaces.Box(-np.inf, np.inf, shape=(3,), dtype=np.float32)
 
-        self.tip_site_id = self.get_id(mujoco.mjtObj.mjOBJ_SITE, "p_psm_tool_tip_site")
+        self.tip_site_id = self.get_id(mujoco.mjtObj.mjOBJ_SITE, "PSM1_tool_tip_site")
         self.target_site_id = self.get_id(mujoco.mjtObj.mjOBJ_SITE, "needle_reach_target")
-        self.rcm_site_id = self.get_id(mujoco.mjtObj.mjOBJ_SITE, "p_psm_rcm_site")
+        self.rcm_site_id = self.get_id(mujoco.mjtObj.mjOBJ_SITE, "PSM1_rcm_site")
         self.joint_ids = joint_ids_from_names(self.model, self.JOINT_NAMES)
         self.arm_actuator_ids = [self.get_id(mujoco.mjtObj.mjOBJ_ACTUATOR, name) for name in self.ARM_ACTUATOR_NAMES]
-        self.initial_ctrl = {
-            self.get_id(mujoco.mjtObj.mjOBJ_ACTUATOR, name): value for name, value in self.INITIAL_CTRL.items()
-        }
+        self.home_keyframe_id = self.get_id(mujoco.mjtObj.mjOBJ_KEY, self.HOME_KEYFRAME)
         self.step_count = 0
 
     def get_id(self, object_type, name):
@@ -266,13 +250,8 @@ class DvrkEnv(gym.Env):
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
-        mujoco.mj_resetData(self.model, self.data)
-        for alpha in np.linspace(0.0, 1.0, 200):
-            for actuator_id, target_qpos in self.initial_ctrl.items():
-                self.data.ctrl[actuator_id] = alpha * target_qpos
-            self.plant.step()
-        self.plant.step(300)
-        self.data.time = 0.0
+        mujoco.mj_resetDataKeyframe(self.model, self.data, self.home_keyframe_id)
+        mujoco.mj_forward(self.model, self.data)
         self.rcm_pos = self.data.site_xpos[self.rcm_site_id].copy()
         self.step_count = 0
         return self.get_observation(), {}

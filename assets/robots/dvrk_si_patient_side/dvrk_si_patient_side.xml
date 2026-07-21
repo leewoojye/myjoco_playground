@@ -1,0 +1,446 @@
+<mujoco model="dvrk_si_patient_side">
+  <compiler angle="radian" boundmass="1e-08" boundinertia="1e-10" alignfree="true" />
+  <option timestep="0.002" iterations="80" integrator="implicitfast" />
+  <asset>
+    <mesh name="Si_tower" content_type="model/stl" file="generated_meshes/Si_tower.STL" />
+    <mesh name="Si_SUJ_PSM_12_link_0" content_type="model/stl" file="generated_meshes/Si_SUJ_PSM_12_link_0.STL" />
+    <mesh name="Si_SUJ_PSM_12_link_1" content_type="model/stl" file="generated_meshes/Si_SUJ_PSM_12_link_1.STL" />
+    <mesh name="Si_SUJ_PSM_12_link_2" content_type="model/stl" file="generated_meshes/Si_SUJ_PSM_12_link_2.STL" />
+    <mesh name="Si_SUJ_PSM_12_link_3" content_type="model/stl" file="generated_meshes/Si_SUJ_PSM_12_link_3.STL" />
+    <mesh name="Si_SUJ_PSM_3_link_0" content_type="model/stl" file="generated_meshes/Si_SUJ_PSM_3_link_0.STL" />
+    <mesh name="Si_SUJ_PSM_3_link_1" content_type="model/stl" file="generated_meshes/Si_SUJ_PSM_3_link_1.STL" />
+    <mesh name="Si_SUJ_PSM_3_link_2" content_type="model/stl" file="generated_meshes/Si_SUJ_PSM_3_link_2.STL" />
+    <mesh name="Si_SUJ_PSM_3_link_3" content_type="model/stl" file="generated_meshes/Si_SUJ_PSM_3_link_3.STL" />
+    <mesh name="Si_SUJ_PSM_3_link_4" content_type="model/stl" file="generated_meshes/Si_SUJ_PSM_3_link_4.STL" />
+    <mesh name="Si_SUJ_ECM_link_0" content_type="model/stl" file="generated_meshes/Si_SUJ_ECM_link_0.STL" />
+    <mesh name="Si_SUJ_ECM_link_1" content_type="model/stl" file="generated_meshes/Si_SUJ_ECM_link_1.STL" />
+    <mesh name="Si_SUJ_ECM_link_2" content_type="model/stl" file="generated_meshes/Si_SUJ_ECM_link_2.STL" />
+    <mesh name="Si_SUJ_ECM_link_3" content_type="model/stl" file="generated_meshes/Si_SUJ_ECM_link_3.STL" />
+    <mesh name="Si_PSM_ECM_link_0" content_type="model/stl" file="generated_meshes/Si_PSM_ECM_link_0.STL" />
+    <mesh name="Si_PSM_ECM_link_1" content_type="model/stl" file="generated_meshes/Si_PSM_ECM_link_1.STL" />
+    <mesh name="Si_PSM_ECM_link_2" content_type="model/stl" file="generated_meshes/Si_PSM_ECM_link_2.STL" />
+    <mesh name="Si_PSM_ECM_link_3" content_type="model/stl" file="generated_meshes/Si_PSM_ECM_link_3.STL" />
+    <mesh name="Si_PSM_ECM_link_4" content_type="model/stl" file="generated_meshes/Si_PSM_ECM_link_4.STL" />
+    <mesh name="instruments_420006_tool_main_link" content_type="model/stl" file="generated_meshes/instruments_420006_tool_main_link.STL" />
+    <mesh name="instruments_420006_tool_wrist_link" content_type="model/stl" file="generated_meshes/instruments_420006_tool_wrist_link.STL" />
+    <mesh name="instruments_420006_tool_wrist_shaft_link" content_type="model/stl" file="generated_meshes/instruments_420006_tool_wrist_shaft_link.STL" />
+    <mesh name="instruments_420006_tool_wrist_scal_link" content_type="model/stl" file="generated_meshes/instruments_420006_tool_wrist_scal_link.STL" />
+    <mesh name="instruments_420006_tool_wrist_sca_shaft_link" content_type="model/stl" file="generated_meshes/instruments_420006_tool_wrist_sca_shaft_link.STL" />
+    <mesh name="instruments_420006_tool_wrist_sca_ee_link_1" content_type="model/stl" file="generated_meshes/instruments_420006_tool_wrist_sca_ee_link_1.STL" />
+    <mesh name="instruments_420006_tool_wrist_sca_ee_link_2" content_type="model/stl" file="generated_meshes/instruments_420006_tool_wrist_sca_ee_link_2.STL" />
+    <mesh name="instruments_SF0826001_tool_main_link" content_type="model/stl" file="generated_meshes/instruments_SF0826001_tool_main_link.STL" />
+    <mesh name="instruments_SF0826001_tool_roll_link" content_type="model/stl" file="generated_meshes/instruments_SF0826001_tool_roll_link.STL" />
+  </asset>
+  <worldbody>
+    <body name="SUJ_column">
+      <inertial pos="0 0 0.851252" mass="89.2439" diaginertia="19.8053 19.7876 0.759874" />
+      <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_tower" />
+      <body name="SUJ_PSM1_link_0" pos="0 0.228 0.528" quat="0.707107 0 0 0.707107">
+        <inertial pos="-0.0425393 1.04456e-05 0.241366" quat="0.704789 0.0240318 0.0238794 0.708607" mass="12.6367" diaginertia="0.367924 0.366091 0.0456355" />
+        <joint name="SUJ_PSM1_J0" pos="0 0 0" axis="0 0 1" type="slide" range="0 0.512" damping="5" armature="0.02" frictionloss="0.01" />
+        <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_SUJ_PSM_12_link_0" />
+        <body name="SUJ_PSM1_link_1" pos="-0.024998 0 0.59">
+          <inertial pos="0.219336 1.65438e-06 0.0731987" quat="0.502101 0.497887 0.49773 0.502263" mass="7.99525" diaginertia="0.243105 0.239595 0.0177952" />
+          <joint name="SUJ_PSM1_J1" pos="0 0 0" axis="0 0 1" range="-3.141 3.141" damping="5" armature="0.02" frictionloss="0.01" />
+          <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_SUJ_PSM_12_link_1" />
+          <body name="SUJ_PSM1_link_2" pos="0.4575 0 0.144">
+            <inertial pos="0.232042 -1.42881e-07 -0.00352271" quat="0.49502 0.504938 0.504859 0.495085" mass="7.19198" diaginertia="0.222798 0.218618 0.0147898" />
+            <joint name="SUJ_PSM1_J2" pos="0 0 0" axis="0 0 1" range="-3.141 3.141" damping="5" armature="0.02" frictionloss="0.01" />
+            <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_SUJ_PSM_12_link_2" />
+            <body name="SUJ_PSM1_link_3" pos="0.458 0 -0.01875">
+              <inertial pos="0.0147559 7.24964e-07 -0.0278688" quat="0.513489 0.513606 -0.486026 0.486124" mass="0.549163" diaginertia="0.000851282 0.000641739 0.000568524" />
+              <joint name="SUJ_PSM1_J3" pos="0 0 0" axis="0 0 1" range="-3.141 3.141" damping="5" armature="0.02" frictionloss="0.01" />
+              <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_SUJ_PSM_12_link_3" />
+              <body name="PSM1_mounting_point" pos="0.045255 0 -0.045255" quat="0.923879 0 0.382684 0">
+                <inertial pos="0.045255 0 -0.045255" quat="0.923879 0 0.382684 0" mass="1e-08" diaginertia="1e-10 1e-10 1e-10" />
+                <body name="PSM1_link_0">
+                  <inertial pos="0.077216 0 0" quat="0 0.707107 0 0.707107" mass="1.51364" diaginertia="0.00436201 0.00405787 0.00238017" />
+                  <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_PSM_ECM_link_0" />
+                  <body name="PSM1_link_1" pos="0.158 0 0">
+                    <inertial pos="0.128137 0.0755279 -0.0210172" quat="-0.153208 0.786903 0.037587 0.596573" mass="2.2903" diaginertia="0.0273737 0.0250315 0.00395137" />
+                    <joint name="PSM1_yaw" pos="0 0 0" axis="-1 0 0" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                    <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_PSM_ECM_link_1" />
+                    <body name="PSM1_link_2" pos="0.2987 0 -0.071222" quat="-3.09791e-06 -0.537315 1.97367e-06 -0.843382">
+                      <inertial pos="0.0919555 -0.000803132 -0.0273879" quat="0.459024 0.53083 0.488483 0.518557" mass="4.51214" diaginertia="0.0293019 0.0285666 0.0133114" />
+                      <joint name="PSM1_pitch" pos="0 0 0" axis="0 -1 0" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                      <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_PSM_ECM_link_2" />
+                      <body name="PSM1_link_3" pos="0.2032 0 0" quat="-3.30142e-06 -0.438389 1.61029e-06 -0.898786">
+                        <inertial pos="0.117637 0 0.110331" quat="0.585059 0.397123 0.397123 0.585059" mass="3.3042" diaginertia="0.0542463 0.0483953 0.00774854" />
+                        <joint name="PSM1_pitch_2" pos="0 0 0" axis="0 1 0" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                        <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_PSM_ECM_link_3" />
+                        <body name="PSM1_link_4" pos="0.35966 0 0.16013" quat="0.999489 0 -0.031976 0">
+                          <inertial pos="0.0481575 -1.49237e-12 0.0749862" quat="0.706598 -0.0268122 -0.0268122 0.706598" mass="1.16201" diaginertia="0.027556 0.0270974 0.000881459" />
+                          <joint name="PSM1_pitch_3" pos="0 0 0" axis="0 1 0" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                          <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_PSM_ECM_link_4" />
+                          <body name="PSM1_tool_parent" pos="0.05061 0 0.41911">
+                            <inertial pos="0.05061 0 0.41911" mass="1e-08" diaginertia="1e-10 1e-10 1e-10" />
+                            <body name="PSM1_tool_main_link">
+                              <inertial pos="0.028248 9.91034e-09 -0.123472" quat="0.998671 0 -0.0515384 0" mass="0.718066" diaginertia="0.00507186 0.00501063 0.000529984" />
+                              <joint name="PSM1_insertion" pos="0 0 0" axis="0 0 -1" type="slide" range="0 0.2987" damping="2" armature="0.02" frictionloss="0.01" />
+                              <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="instruments_420006_tool_main_link" />
+                              <body name="PSM1_tool_wrist_link" pos="0.05591 0 -0.53559" quat="-3.67321e-06 -1 0 0">
+                                <inertial pos="3.61365e-07 8.31205e-08 0.00448914" mass="0.00047632" diaginertia="5.92118e-09 5.07843e-09 4.08671e-09" />
+                                <joint name="PSM1_roll" pos="0 0 0" axis="0 0 1" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                                <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="instruments_420006_tool_wrist_link" />
+                                <body name="PSM1_tool_wrist_shaft_link" pos="0 1e-05 0.009">
+                                  <inertial pos="1.59773e-08 2.48521e-08 -1.37909e-05" mass="6.34988e-05" diaginertia="2.62818e-10 1e-10 2.67272e-10" />
+                                  <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="instruments_420006_tool_wrist_shaft_link" />
+                                  <body name="PSM1_tool_wrist_scal_link">
+                                    <inertial pos="-7.77619e-08 -2.75204e-07 0.00415886" mass="0.000309" diaginertia="2.8534e-09 3.25559e-09 1.3414e-09" />
+                                    <joint name="PSM1_wrist_pitch" pos="0 0 0" axis="0 -1 0" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                                    <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="instruments_420006_tool_wrist_scal_link" />
+                                    <body name="PSM1_tool_wrist_sca_shaft_link" pos="0 0 0.0086973">
+                                      <inertial pos="0 8.88191e-07 3.03932e-06" mass="1.04758e-05" diaginertia="1e-10 1e-10 1e-10" />
+                                      <joint name="PSM1_wrist_yaw" pos="0 0 0" axis="1 0 0" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                                      <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="instruments_420006_tool_wrist_sca_shaft_link" />
+                                      <body name="PSM1_tool_wrist_sca_ee_link">
+                                        <inertial pos="0 0 0" mass="1e-08" diaginertia="1e-10 1e-10 1e-10" />
+                                        <joint name="PSM1_jaw" pos="0 0 0" axis="0 0 1" range="0 1.5707" actuatorfrcrange="-1000 1000" damping="2" armature="0.02" frictionloss="0.01" />
+                                        <site name="PSM1_tool_tip_site" pos="0 0 0.010" size="0.006" rgba="1 0.25 0.1 1" />
+                                      </body>
+                                      <body name="PSM1_tool_wrist_sca_ee_link_1">
+                                        <inertial pos="0.000630149 -0.000141854 0.00186314" mass="5.18976e-05" diaginertia="4.18915e-10 4.01452e-10 1e-10" />
+                                        <joint name="PSM1_jaw_1" pos="0 0 0" axis="1 0 0" range="-1.5717 1.5717" damping="2" armature="0.02" frictionloss="0.01" />
+                                        <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.77647 0.75686 0.73725 1" mesh="instruments_420006_tool_wrist_sca_ee_link_1" />
+                                      </body>
+                                      <body name="PSM1_tool_wrist_sca_ee_link_2">
+                                        <inertial pos="-0.000630149 0.000141854 0.00186314" mass="5.18976e-05" diaginertia="4.18915e-10 4.01452e-10 1e-10" />
+                                        <joint name="PSM1_jaw_2" pos="0 0 0" axis="-1 0 0" range="-1.5717 1.5717" damping="2" armature="0.02" frictionloss="0.01" />
+                                        <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.77647 0.75686 0.73725 1" mesh="instruments_420006_tool_wrist_sca_ee_link_2" />
+                                      </body>
+                                    </body>
+                                  </body>
+                                </body>
+                              </body>
+                            </body>
+                          </body>
+                          <body name="PSM1_RCM" pos="0.10643 0 -0.1731" quat="-2.59734e-06 0.707105 -0.707108 2.59735e-06">
+                            <inertial pos="0.10643 0 -0.1731" quat="-2.59734e-06 0.707105 -0.707108 2.59735e-06" mass="1e-08" diaginertia="1e-10 1e-10 1e-10" />
+                            <site name="PSM1_rcm_site" pos="0 0 0" size="0.006" rgba="0 0.85 0.35 1" />
+                          </body>
+                        </body>
+                      </body>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="SUJ_PSM2_link_0" pos="0 -0.228 0.528" quat="0.707107 0 0 -0.707107">
+        <inertial pos="-0.0425393 1.04456e-05 0.241366" quat="0.704789 0.0240318 0.0238794 0.708607" mass="12.6367" diaginertia="0.367924 0.366091 0.0456355" />
+        <joint name="SUJ_PSM2_J0" pos="0 0 0" axis="0 0 1" type="slide" range="0 0.512" damping="5" armature="0.02" frictionloss="0.01" />
+        <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_SUJ_PSM_12_link_0" />
+        <body name="SUJ_PSM2_link_1" pos="-0.024998 0 0.59">
+          <inertial pos="0.219336 1.65438e-06 0.0731987" quat="0.502101 0.497887 0.49773 0.502263" mass="7.99525" diaginertia="0.243105 0.239595 0.0177952" />
+          <joint name="SUJ_PSM2_J1" pos="0 0 0" axis="0 0 1" range="-3.141 3.141" damping="5" armature="0.02" frictionloss="0.01" />
+          <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_SUJ_PSM_12_link_1" />
+          <body name="SUJ_PSM2_link_2" pos="0.4575 0 0.144">
+            <inertial pos="0.232042 -1.42881e-07 -0.00352271" quat="0.49502 0.504938 0.504859 0.495085" mass="7.19198" diaginertia="0.222798 0.218618 0.0147898" />
+            <joint name="SUJ_PSM2_J2" pos="0 0 0" axis="0 0 1" range="-3.141 3.141" damping="5" armature="0.02" frictionloss="0.01" />
+            <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_SUJ_PSM_12_link_2" />
+            <body name="SUJ_PSM2_link_3" pos="0.458 0 -0.01875">
+              <inertial pos="0.0147559 7.24964e-07 -0.0278688" quat="0.513489 0.513606 -0.486026 0.486124" mass="0.549163" diaginertia="0.000851282 0.000641739 0.000568524" />
+              <joint name="SUJ_PSM2_J3" pos="0 0 0" axis="0 0 1" range="-3.141 3.141" damping="5" armature="0.02" frictionloss="0.01" />
+              <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_SUJ_PSM_12_link_3" />
+              <body name="PSM2_mounting_point" pos="0.045255 0 -0.045255" quat="0.923879 0 0.382684 0">
+                <inertial pos="0.045255 0 -0.045255" quat="0.923879 0 0.382684 0" mass="1e-08" diaginertia="1e-10 1e-10 1e-10" />
+                <body name="PSM2_link_0">
+                  <inertial pos="0.077216 0 0" quat="0 0.707107 0 0.707107" mass="1.51364" diaginertia="0.00436201 0.00405787 0.00238017" />
+                  <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_PSM_ECM_link_0" />
+                  <body name="PSM2_link_1" pos="0.158 0 0">
+                    <inertial pos="0.128137 0.0755279 -0.0210172" quat="-0.153208 0.786903 0.037587 0.596573" mass="2.2903" diaginertia="0.0273737 0.0250315 0.00395137" />
+                    <joint name="PSM2_yaw" pos="0 0 0" axis="-1 0 0" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                    <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_PSM_ECM_link_1" />
+                    <body name="PSM2_link_2" pos="0.2987 0 -0.071222" quat="-3.09791e-06 -0.537315 1.97367e-06 -0.843382">
+                      <inertial pos="0.0919555 -0.000803132 -0.0273879" quat="0.459024 0.53083 0.488483 0.518557" mass="4.51214" diaginertia="0.0293019 0.0285666 0.0133114" />
+                      <joint name="PSM2_pitch" pos="0 0 0" axis="0 -1 0" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                      <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_PSM_ECM_link_2" />
+                      <body name="PSM2_link_3" pos="0.2032 0 0" quat="-3.30142e-06 -0.438389 1.61029e-06 -0.898786">
+                        <inertial pos="0.117637 0 0.110331" quat="0.585059 0.397123 0.397123 0.585059" mass="3.3042" diaginertia="0.0542463 0.0483953 0.00774854" />
+                        <joint name="PSM2_pitch_2" pos="0 0 0" axis="0 1 0" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                        <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_PSM_ECM_link_3" />
+                        <body name="PSM2_link_4" pos="0.35966 0 0.16013" quat="0.999489 0 -0.031976 0">
+                          <inertial pos="0.0481575 -1.49237e-12 0.0749862" quat="0.706598 -0.0268122 -0.0268122 0.706598" mass="1.16201" diaginertia="0.027556 0.0270974 0.000881459" />
+                          <joint name="PSM2_pitch_3" pos="0 0 0" axis="0 1 0" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                          <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_PSM_ECM_link_4" />
+                          <body name="PSM2_tool_parent" pos="0.05061 0 0.41911">
+                            <inertial pos="0.05061 0 0.41911" mass="1e-08" diaginertia="1e-10 1e-10 1e-10" />
+                            <body name="PSM2_tool_main_link">
+                              <inertial pos="0.028248 9.91034e-09 -0.123472" quat="0.998671 0 -0.0515384 0" mass="0.718066" diaginertia="0.00507186 0.00501063 0.000529984" />
+                              <joint name="PSM2_insertion" pos="0 0 0" axis="0 0 -1" type="slide" range="0 0.2987" damping="2" armature="0.02" frictionloss="0.01" />
+                              <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="instruments_420006_tool_main_link" />
+                              <body name="PSM2_tool_wrist_link" pos="0.05591 0 -0.53559" quat="-3.67321e-06 -1 0 0">
+                                <inertial pos="3.61365e-07 8.31205e-08 0.00448914" mass="0.00047632" diaginertia="5.92118e-09 5.07843e-09 4.08671e-09" />
+                                <joint name="PSM2_roll" pos="0 0 0" axis="0 0 1" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                                <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="instruments_420006_tool_wrist_link" />
+                                <body name="PSM2_tool_wrist_shaft_link" pos="0 1e-05 0.009">
+                                  <inertial pos="1.59773e-08 2.48521e-08 -1.37909e-05" mass="6.34988e-05" diaginertia="2.62818e-10 1e-10 2.67272e-10" />
+                                  <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="instruments_420006_tool_wrist_shaft_link" />
+                                  <body name="PSM2_tool_wrist_scal_link">
+                                    <inertial pos="-7.77619e-08 -2.75204e-07 0.00415886" mass="0.000309" diaginertia="2.8534e-09 3.25559e-09 1.3414e-09" />
+                                    <joint name="PSM2_wrist_pitch" pos="0 0 0" axis="0 -1 0" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                                    <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="instruments_420006_tool_wrist_scal_link" />
+                                    <body name="PSM2_tool_wrist_sca_shaft_link" pos="0 0 0.0086973">
+                                      <inertial pos="0 8.88191e-07 3.03932e-06" mass="1.04758e-05" diaginertia="1e-10 1e-10 1e-10" />
+                                      <joint name="PSM2_wrist_yaw" pos="0 0 0" axis="1 0 0" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                                      <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="instruments_420006_tool_wrist_sca_shaft_link" />
+                                      <body name="PSM2_tool_wrist_sca_ee_link">
+                                        <inertial pos="0 0 0" mass="1e-08" diaginertia="1e-10 1e-10 1e-10" />
+                                        <joint name="PSM2_jaw" pos="0 0 0" axis="0 0 1" range="0 1.5707" actuatorfrcrange="-1000 1000" damping="2" armature="0.02" frictionloss="0.01" />
+                                      </body>
+                                      <body name="PSM2_tool_wrist_sca_ee_link_1">
+                                        <inertial pos="0.000630149 -0.000141854 0.00186314" mass="5.18976e-05" diaginertia="4.18915e-10 4.01452e-10 1e-10" />
+                                        <joint name="PSM2_jaw_1" pos="0 0 0" axis="1 0 0" range="-1.5717 1.5717" damping="2" armature="0.02" frictionloss="0.01" />
+                                        <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.77647 0.75686 0.73725 1" mesh="instruments_420006_tool_wrist_sca_ee_link_1" />
+                                      </body>
+                                      <body name="PSM2_tool_wrist_sca_ee_link_2">
+                                        <inertial pos="-0.000630149 0.000141854 0.00186314" mass="5.18976e-05" diaginertia="4.18915e-10 4.01452e-10 1e-10" />
+                                        <joint name="PSM2_jaw_2" pos="0 0 0" axis="-1 0 0" range="-1.5717 1.5717" damping="2" armature="0.02" frictionloss="0.01" />
+                                        <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.77647 0.75686 0.73725 1" mesh="instruments_420006_tool_wrist_sca_ee_link_2" />
+                                      </body>
+                                    </body>
+                                  </body>
+                                </body>
+                              </body>
+                            </body>
+                          </body>
+                          <body name="PSM2_RCM" pos="0.10643 0 -0.1731" quat="-2.59734e-06 0.707105 -0.707108 2.59735e-06">
+                            <inertial pos="0.10643 0 -0.1731" quat="-2.59734e-06 0.707105 -0.707108 2.59735e-06" mass="1e-08" diaginertia="1e-10 1e-10 1e-10" />
+                          </body>
+                        </body>
+                      </body>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="SUJ_PSM3_link_0" pos="-0.223 0 0.528" quat="0 0 0 -1">
+        <inertial pos="-0.0436302 1.53368e-05 0.219696" quat="0.703976 0.0259577 0.0257236 0.709283" mass="11.8824" diaginertia="0.277478 0.275634 0.0445981" />
+        <joint name="SUJ_PSM3_J0" pos="0 0 0" axis="0 0 1" type="slide" range="0 0.512" damping="5" armature="0.02" frictionloss="0.01" />
+        <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_SUJ_PSM_3_link_0" />
+        <body name="SUJ_PSM3_link_1" pos="-0.024998 0 0.513">
+          <inertial pos="0.205878 1.07557e-05 0.0361247" quat="0.438268 0.554739 0.55572 0.437448" mass="8.97584" diaginertia="0.215193 0.191198 0.0413118" />
+          <joint name="SUJ_PSM3_J1" pos="0 0 0" axis="0 0 1" range="-3.14 3.14" damping="5" armature="0.02" frictionloss="0.01" />
+          <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_SUJ_PSM_3_link_1" />
+          <body name="SUJ_PSM3_link_2" pos="0.3429 0 -0.1942" quat="0 1 0 0">
+            <inertial pos="0.233853 -2.07765e-06 -0.000542733" quat="0.499668 0.50033 0.500328 0.499674" mass="7.53548" diaginertia="0.226567 0.224172 0.0158303" />
+            <joint name="SUJ_PSM3_J2" pos="0 0 0" axis="0 0 -1" range="-3.14 3.14" damping="5" armature="0.02" frictionloss="0.01" />
+            <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_SUJ_PSM_3_link_2" />
+            <body name="SUJ_PSM3_link_3" pos="0.4575 0 -0.0722" quat="0 1 0 0">
+              <inertial pos="0.232042 -1.42881e-07 -0.00352271" quat="0.49502 0.504938 0.504859 0.495085" mass="7.19198" diaginertia="0.222798 0.218618 0.0147898" />
+              <joint name="SUJ_PSM3_J3" pos="0 0 0" axis="0 0 1" range="-3.14 3.14" damping="5" armature="0.02" frictionloss="0.01" />
+              <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_SUJ_PSM_3_link_3" />
+              <body name="SUJ_PSM3_link_4" pos="0.458 0 -0.01875">
+                <inertial pos="0.00171579 3.18791e-06 -0.0750089" quat="0.999907 -6.18802e-06 -0.0136033 0.000202832" mass="1.46883" diaginertia="0.00386178 0.0037498 0.00231146" />
+                <joint name="SUJ_PSM3_J4" pos="0 0 0" axis="0 0 1" range="-3.14 3.14" damping="5" armature="0.02" frictionloss="0.01" />
+                <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_SUJ_PSM_3_link_4" />
+                <body name="PSM3_mounting_point" pos="0.045254 0 -0.11671" quat="0.991445 0 0.130526 0">
+                  <inertial pos="0.045254 0 -0.11671" quat="0.991445 0 0.130526 0" mass="1e-08" diaginertia="1e-10 1e-10 1e-10" />
+                  <body name="PSM3_link_0">
+                    <inertial pos="0.077216 0 0" quat="0 0.707107 0 0.707107" mass="1.51364" diaginertia="0.00436201 0.00405787 0.00238017" />
+                    <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_PSM_ECM_link_0" />
+                    <body name="PSM3_link_1" pos="0.158 0 0">
+                      <inertial pos="0.128137 0.0755279 -0.0210172" quat="-0.153208 0.786903 0.037587 0.596573" mass="2.2903" diaginertia="0.0273737 0.0250315 0.00395137" />
+                      <joint name="PSM3_yaw" pos="0 0 0" axis="-1 0 0" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                      <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_PSM_ECM_link_1" />
+                      <body name="PSM3_link_2" pos="0.2987 0 -0.071222" quat="-3.09791e-06 -0.537315 1.97367e-06 -0.843382">
+                        <inertial pos="0.0919555 -0.000803132 -0.0273879" quat="0.459024 0.53083 0.488483 0.518557" mass="4.51214" diaginertia="0.0293019 0.0285666 0.0133114" />
+                        <joint name="PSM3_pitch" pos="0 0 0" axis="0 -1 0" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                        <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_PSM_ECM_link_2" />
+                        <body name="PSM3_link_3" pos="0.2032 0 0" quat="-3.30142e-06 -0.438389 1.61029e-06 -0.898786">
+                          <inertial pos="0.117637 0 0.110331" quat="0.585059 0.397123 0.397123 0.585059" mass="3.3042" diaginertia="0.0542463 0.0483953 0.00774854" />
+                          <joint name="PSM3_pitch_2" pos="0 0 0" axis="0 1 0" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                          <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_PSM_ECM_link_3" />
+                          <body name="PSM3_link_4" pos="0.35966 0 0.16013" quat="0.999489 0 -0.031976 0">
+                            <inertial pos="0.0481575 -1.49237e-12 0.0749862" quat="0.706598 -0.0268122 -0.0268122 0.706598" mass="1.16201" diaginertia="0.027556 0.0270974 0.000881459" />
+                            <joint name="PSM3_pitch_3" pos="0 0 0" axis="0 1 0" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                            <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_PSM_ECM_link_4" />
+                            <body name="PSM3_tool_parent" pos="0.05061 0 0.41911">
+                              <inertial pos="0.05061 0 0.41911" mass="1e-08" diaginertia="1e-10 1e-10 1e-10" />
+                              <body name="PSM3_tool_main_link">
+                                <inertial pos="0.028248 9.91034e-09 -0.123472" quat="0.998671 0 -0.0515384 0" mass="0.718066" diaginertia="0.00507186 0.00501063 0.000529984" />
+                                <joint name="PSM3_insertion" pos="0 0 0" axis="0 0 -1" type="slide" range="0 0.2987" damping="2" armature="0.02" frictionloss="0.01" />
+                                <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="instruments_420006_tool_main_link" />
+                                <body name="PSM3_tool_wrist_link" pos="0.05591 0 -0.53559" quat="-3.67321e-06 -1 0 0">
+                                  <inertial pos="3.61365e-07 8.31205e-08 0.00448914" mass="0.00047632" diaginertia="5.92118e-09 5.07843e-09 4.08671e-09" />
+                                  <joint name="PSM3_roll" pos="0 0 0" axis="0 0 1" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                                  <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="instruments_420006_tool_wrist_link" />
+                                  <body name="PSM3_tool_wrist_shaft_link" pos="0 1e-05 0.009">
+                                    <inertial pos="1.59773e-08 2.48521e-08 -1.37909e-05" mass="6.34988e-05" diaginertia="2.62818e-10 1e-10 2.67272e-10" />
+                                    <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="instruments_420006_tool_wrist_shaft_link" />
+                                    <body name="PSM3_tool_wrist_scal_link">
+                                      <inertial pos="-7.77619e-08 -2.75204e-07 0.00415886" mass="0.000309" diaginertia="2.8534e-09 3.25559e-09 1.3414e-09" />
+                                      <joint name="PSM3_wrist_pitch" pos="0 0 0" axis="0 -1 0" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                                      <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="instruments_420006_tool_wrist_scal_link" />
+                                      <body name="PSM3_tool_wrist_sca_shaft_link" pos="0 0 0.0086973">
+                                        <inertial pos="0 8.88191e-07 3.03932e-06" mass="1.04758e-05" diaginertia="1e-10 1e-10 1e-10" />
+                                        <joint name="PSM3_wrist_yaw" pos="0 0 0" axis="1 0 0" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                                        <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="instruments_420006_tool_wrist_sca_shaft_link" />
+                                        <body name="PSM3_tool_wrist_sca_ee_link">
+                                          <inertial pos="0 0 0" mass="1e-08" diaginertia="1e-10 1e-10 1e-10" />
+                                          <joint name="PSM3_jaw" pos="0 0 0" axis="0 0 1" range="0 1.5707" actuatorfrcrange="-1000 1000" damping="2" armature="0.02" frictionloss="0.01" />
+                                        </body>
+                                        <body name="PSM3_tool_wrist_sca_ee_link_1">
+                                          <inertial pos="0.000630149 -0.000141854 0.00186314" mass="5.18976e-05" diaginertia="4.18915e-10 4.01452e-10 1e-10" />
+                                          <joint name="PSM3_jaw_1" pos="0 0 0" axis="1 0 0" range="-1.5717 1.5717" damping="2" armature="0.02" frictionloss="0.01" />
+                                          <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.77647 0.75686 0.73725 1" mesh="instruments_420006_tool_wrist_sca_ee_link_1" />
+                                        </body>
+                                        <body name="PSM3_tool_wrist_sca_ee_link_2">
+                                          <inertial pos="-0.000630149 0.000141854 0.00186314" mass="5.18976e-05" diaginertia="4.18915e-10 4.01452e-10 1e-10" />
+                                          <joint name="PSM3_jaw_2" pos="0 0 0" axis="-1 0 0" range="-1.5717 1.5717" damping="2" armature="0.02" frictionloss="0.01" />
+                                          <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.77647 0.75686 0.73725 1" mesh="instruments_420006_tool_wrist_sca_ee_link_2" />
+                                        </body>
+                                      </body>
+                                    </body>
+                                  </body>
+                                </body>
+                              </body>
+                            </body>
+                            <body name="PSM3_RCM" pos="0.10643 0 -0.1731" quat="-2.59734e-06 0.707105 -0.707108 2.59735e-06">
+                              <inertial pos="0.10643 0 -0.1731" quat="-2.59734e-06 0.707105 -0.707108 2.59735e-06" mass="1e-08" diaginertia="1e-10 1e-10 1e-10" />
+                            </body>
+                          </body>
+                        </body>
+                      </body>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="SUJ_ECM_link_0" pos="0.223 0 0.528">
+        <inertial pos="-0.0434119 1.57448e-05 0.223227" quat="0.703867 0.0257852 0.0255431 0.709404" mass="12.0242" diaginertia="0.290187 0.288345 0.0449109" />
+        <joint name="SUJ_ECM_J0" pos="0 0 0" axis="0 0 1" type="slide" range="0 0.512" damping="5" armature="0.02" frictionloss="0.01" />
+        <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_SUJ_ECM_link_0" />
+        <body name="SUJ_ECM_link_1" pos="-0.025 0 0.5232">
+          <inertial pos="0.162214 -2.76739e-07 0.0640766" quat="0.501107 0.49889 0.498788 0.50121" mass="5.74554" diaginertia="0.105511 0.103677 0.0121488" />
+          <joint name="SUJ_ECM_J1" pos="0 0 0" axis="0 0 1" range="-3.14 3.14" damping="5" armature="0.02" frictionloss="0.01" />
+          <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_SUJ_ECM_link_1" />
+          <body name="SUJ_ECM_link_2" pos="0.3302 0 0.1313">
+            <inertial pos="0.159775 1.21639e-06 0.0639239" quat="0.500904 0.499095 0.499263 0.500736" mass="5.5248" diaginertia="0.10252 0.100917 0.011196" />
+            <joint name="SUJ_ECM_J2" pos="0 0 0" axis="0 0 1" range="-3.14 3.14" damping="5" armature="0.02" frictionloss="0.01" />
+            <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_SUJ_ECM_link_2" />
+            <body name="SUJ_ECM_link_3" pos="0.3302 0 0.064">
+              <inertial pos="0.0630082 -3.04113e-07 0.0234127" quat="-2.81221e-05 0.72896 -2.99462e-05 0.684557" mass="1.29926" diaginertia="0.00567279 0.00492741 0.00155578" />
+              <joint name="SUJ_ECM_J3" pos="0 0 0" axis="0 0 1" range="-3.14 3.14" damping="5" armature="0.02" frictionloss="0.01" />
+              <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_SUJ_ECM_link_3" />
+              <body name="ECM_mounting_point" pos="0.12857 0 -0.0109" quat="0.819161 0 0.573564 0">
+                <inertial pos="0.12857 0 -0.0109" quat="0.819161 0 0.573564 0" mass="1e-08" diaginertia="1e-10 1e-10 1e-10" />
+                <body name="ECM_link_0">
+                  <inertial pos="0.077216 0 0" quat="0 0.707107 0 0.707107" mass="1.51364" diaginertia="0.00436201 0.00405787 0.00238017" />
+                  <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_PSM_ECM_link_0" />
+                  <body name="ECM_link_1" pos="0.158 0 0">
+                    <inertial pos="0.128137 0.0755279 -0.0210172" quat="-0.153208 0.786903 0.037587 0.596573" mass="2.2903" diaginertia="0.0273737 0.0250315 0.00395137" />
+                    <joint name="ECM_yaw" pos="0 0 0" axis="-1 0 0" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                    <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_PSM_ECM_link_1" />
+                    <body name="ECM_link_2" pos="0.2987 0 -0.071222" quat="-3.09791e-06 -0.537315 1.97367e-06 -0.843382">
+                      <inertial pos="0.0919555 -0.000803132 -0.0273879" quat="0.459024 0.53083 0.488483 0.518557" mass="4.51214" diaginertia="0.0293019 0.0285666 0.0133114" />
+                      <joint name="ECM_pitch" pos="0 0 0" axis="0 -1 0" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                      <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_PSM_ECM_link_2" />
+                      <body name="ECM_link_3" pos="0.2032 0 0" quat="-3.30142e-06 -0.438389 1.61029e-06 -0.898786">
+                        <inertial pos="0.117637 0 0.110331" quat="0.585059 0.397123 0.397123 0.585059" mass="3.3042" diaginertia="0.0542463 0.0483953 0.00774854" />
+                        <joint name="ECM_pitch_2" pos="0 0 0" axis="0 1 0" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                        <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_PSM_ECM_link_3" />
+                        <body name="ECM_link_4" pos="0.35966 0 0.16013" quat="0.999489 0 -0.031976 0">
+                          <inertial pos="0.0481575 -1.49237e-12 0.0749862" quat="0.706598 -0.0268122 -0.0268122 0.706598" mass="1.16201" diaginertia="0.027556 0.0270974 0.000881459" />
+                          <joint name="ECM_pitch_3" pos="0 0 0" axis="0 1 0" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                          <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="Si_PSM_ECM_link_4" />
+                          <body name="ECM_tool_parent" pos="0.05061 0 0.41911">
+                            <inertial pos="0.05061 0 0.41911" mass="1e-08" diaginertia="1e-10 1e-10 1e-10" />
+                            <body name="ECM_tool_main_link">
+                              <inertial pos="0.028318 9.8936e-09 -0.123883" quat="0.998657 0 -0.0518124 0" mass="0.720603" diaginertia="0.00512815 0.005067 0.000530354" />
+                              <joint name="ECM_insertion" pos="0 0 0" axis="0 0 -1" type="slide" range="0 0.2987" damping="2" armature="0.02" frictionloss="0.01" />
+                              <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="instruments_SF0826001_tool_main_link" />
+                              <body name="ECM_tool_roll_link" pos="0.05591 0 -0.53039">
+                                <inertial pos="0.00107494 2.54577e-07 -0.00161401" mass="0.000178937" diaginertia="1.07794e-09 8.69905e-10 1.52096e-09" />
+                                <joint name="ECM_roll" pos="0 0 0" axis="0 0 1" range="-3.14 3.14" damping="2" armature="0.02" frictionloss="0.01" />
+                                <geom type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.79216 0.81961 0.93333 1" mesh="instruments_SF0826001_tool_roll_link" />
+                              </body>
+                            </body>
+                          </body>
+                          <body name="ECM_RCM" pos="0.10643 0 -0.1731" quat="-2.59734e-06 0.707105 -0.707108 2.59735e-06">
+                            <inertial pos="0.10643 0 -0.1731" quat="-2.59734e-06 0.707105 -0.707108 2.59735e-06" mass="1e-08" diaginertia="1e-10 1e-10 1e-10" />
+                          </body>
+                        </body>
+                      </body>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+  <equality>
+    <joint name="eq_PSM1_pitch_2" joint1="PSM1_pitch_2" joint2="PSM1_pitch" polycoef="0 -1 0 0 0" solref="0.005 1" />
+    <joint name="eq_PSM1_pitch_3" joint1="PSM1_pitch_3" joint2="PSM1_pitch" polycoef="0 1 0 0 0" solref="0.005 1" />
+    <joint name="eq_PSM1_jaw_1" joint1="PSM1_jaw_1" joint2="PSM1_jaw" polycoef="0 0.5 0 0 0" solref="0.005 1" />
+    <joint name="eq_PSM1_jaw_2" joint1="PSM1_jaw_2" joint2="PSM1_jaw" polycoef="0 0.5 0 0 0" solref="0.005 1" />
+    <joint name="eq_PSM2_pitch_2" joint1="PSM2_pitch_2" joint2="PSM2_pitch" polycoef="0 -1 0 0 0" solref="0.005 1" />
+    <joint name="eq_PSM2_pitch_3" joint1="PSM2_pitch_3" joint2="PSM2_pitch" polycoef="0 1 0 0 0" solref="0.005 1" />
+    <joint name="eq_PSM2_jaw_1" joint1="PSM2_jaw_1" joint2="PSM2_jaw" polycoef="0 0.5 0 0 0" solref="0.005 1" />
+    <joint name="eq_PSM2_jaw_2" joint1="PSM2_jaw_2" joint2="PSM2_jaw" polycoef="0 0.5 0 0 0" solref="0.005 1" />
+    <joint name="eq_PSM3_pitch_2" joint1="PSM3_pitch_2" joint2="PSM3_pitch" polycoef="0 -1 0 0 0" solref="0.005 1" />
+    <joint name="eq_PSM3_pitch_3" joint1="PSM3_pitch_3" joint2="PSM3_pitch" polycoef="0 1 0 0 0" solref="0.005 1" />
+    <joint name="eq_PSM3_jaw_1" joint1="PSM3_jaw_1" joint2="PSM3_jaw" polycoef="0 0.5 0 0 0" solref="0.005 1" />
+    <joint name="eq_PSM3_jaw_2" joint1="PSM3_jaw_2" joint2="PSM3_jaw" polycoef="0 0.5 0 0 0" solref="0.005 1" />
+    <joint name="eq_ECM_pitch_2" joint1="ECM_pitch_2" joint2="ECM_pitch" polycoef="0 -1 0 0 0" solref="0.005 1" />
+    <joint name="eq_ECM_pitch_3" joint1="ECM_pitch_3" joint2="ECM_pitch" polycoef="0 1 0 0 0" solref="0.005 1" />
+    <joint name="lock_SUJ_PSM1_J0" joint1="SUJ_PSM1_J0" polycoef="0.005 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_SUJ_PSM1_J1" joint1="SUJ_PSM1_J1" polycoef="-0.8792 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_SUJ_PSM1_J2" joint1="SUJ_PSM1_J2" polycoef="0.3702 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_SUJ_PSM1_J3" joint1="SUJ_PSM1_J3" polycoef="1.6385 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_SUJ_PSM2_J0" joint1="SUJ_PSM2_J0" polycoef="0.1 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_SUJ_PSM2_J1" joint1="SUJ_PSM2_J1" polycoef="0 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_SUJ_PSM2_J2" joint1="SUJ_PSM2_J2" polycoef="3 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_SUJ_PSM2_J3" joint1="SUJ_PSM2_J3" polycoef="0 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_SUJ_PSM3_J0" joint1="SUJ_PSM3_J0" polycoef="0.2 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_SUJ_PSM3_J1" joint1="SUJ_PSM3_J1" polycoef="1.5 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_SUJ_PSM3_J2" joint1="SUJ_PSM3_J2" polycoef="2.8 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_SUJ_PSM3_J3" joint1="SUJ_PSM3_J3" polycoef="-2.8 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_SUJ_PSM3_J4" joint1="SUJ_PSM3_J4" polycoef="-3 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_SUJ_ECM_J0" joint1="SUJ_ECM_J0" polycoef="0.10924 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_SUJ_ECM_J1" joint1="SUJ_ECM_J1" polycoef="1.54406 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_SUJ_ECM_J2" joint1="SUJ_ECM_J2" polycoef="0.27367 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_SUJ_ECM_J3" joint1="SUJ_ECM_J3" polycoef="0.139 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_PSM2_yaw" joint1="PSM2_yaw" polycoef="0 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_PSM2_pitch" joint1="PSM2_pitch" polycoef="-1.2 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_PSM2_insertion" joint1="PSM2_insertion" polycoef="0 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_PSM2_roll" joint1="PSM2_roll" polycoef="0 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_PSM2_wrist_pitch" joint1="PSM2_wrist_pitch" polycoef="0 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_PSM2_wrist_yaw" joint1="PSM2_wrist_yaw" polycoef="0 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_PSM2_jaw" joint1="PSM2_jaw" polycoef="0 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_PSM3_yaw" joint1="PSM3_yaw" polycoef="0 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_PSM3_pitch" joint1="PSM3_pitch" polycoef="-1.2 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_PSM3_insertion" joint1="PSM3_insertion" polycoef="0 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_PSM3_roll" joint1="PSM3_roll" polycoef="0 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_PSM3_wrist_pitch" joint1="PSM3_wrist_pitch" polycoef="0 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_PSM3_wrist_yaw" joint1="PSM3_wrist_yaw" polycoef="0 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_PSM3_jaw" joint1="PSM3_jaw" polycoef="0 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_ECM_yaw" joint1="ECM_yaw" polycoef="2.2676 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_ECM_pitch" joint1="ECM_pitch" polycoef="-1.47363 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_ECM_insertion" joint1="ECM_insertion" polycoef="0 0 0 0 0" solref="0.005 1" />
+    <joint name="lock_ECM_roll" joint1="ECM_roll" polycoef="0 0 0 0 0" solref="0.005 1" />
+  </equality>
+  <actuator>
+    <position name="PSM1_yaw" joint="PSM1_yaw" kp="80" kv="2" ctrlrange="-3.14 3.14" forcelimited="true" forcerange="-120 120" />
+    <position name="PSM1_pitch" joint="PSM1_pitch" kp="80" kv="2" ctrlrange="-3.14 3.14" forcelimited="true" forcerange="-120 120" />
+    <position name="PSM1_insertion" joint="PSM1_insertion" kp="400" kv="10" ctrlrange="0 0.2987" forcelimited="true" forcerange="-160 160" />
+    <position name="PSM1_roll" joint="PSM1_roll" kp="80" kv="0.5" ctrlrange="-3.14 3.14" forcelimited="true" forcerange="-120 120" />
+    <position name="PSM1_wrist_pitch" joint="PSM1_wrist_pitch" kp="80" kv="0.5" ctrlrange="-3.14 3.14" forcelimited="true" forcerange="-120 120" />
+    <position name="PSM1_wrist_yaw" joint="PSM1_wrist_yaw" kp="80" kv="0.5" ctrlrange="-3.14 3.14" forcelimited="true" forcerange="-120 120" />
+    <position name="PSM1_jaw" joint="PSM1_jaw" kp="20" kv="0.5" ctrlrange="0 1.5707" forcelimited="true" forcerange="-30 30" />
+  </actuator>
+  <keyframe>
+    <key name="dvrk_home" qpos="0.005 -0.8792 0.3702 1.6385 -0.0472 -1.0466 1.0466 -1.0466 0.24 0 0 0 0.3 0.15 0.15 0.1 0 3 0 0 -1.2 1.2 -1.2 0 0 0 0 0 0 0 0.2 1.5 2.8 -2.8 -3 0 -1.2 1.2 -1.2 0 0 0 0 0 0 0 0.10924 1.54406 0.27367 0.139 2.2676 -1.47363 1.47363 -1.47363 0 0" ctrl="-0.0472 -1.0466 0.24 0 0 0 0.3" />
+  </keyframe>
+</mujoco>
