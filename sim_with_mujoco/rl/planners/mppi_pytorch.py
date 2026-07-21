@@ -173,25 +173,25 @@ class DvrkRBFMPPIPlanner:
 
         def running_cost(state, action):
             position_error = state[..., :3] - self.goal[:3]
-            rotation_error = self.dynamics.relative_rotation_vector(
-                state[..., 3:6], self.goal[3:6]
-            )
-            jaw_error = state[..., 6] - self.goal[6]
             return (
                 2000.0 * position_error.square().sum(dim=-1)
-                + 4.0 * rotation_error.square().sum(dim=-1)
-                + 2.0 * jaw_error.square()
                 + 0.01 * (action / action_limit).square().sum(dim=-1)
             )
+
+        def terminal_cost(states, actions):
+            final_state = states[..., -1, :]
+            position_error = final_state[..., :3] - self.goal[:3]
+            return 17.0 * 2000.0 * position_error.square().sum(dim=-1)
 
         self.mppi = MPPI(
             dynamics=self.dynamics,
             running_cost=running_cost,
+            terminal_state_cost=terminal_cost,
             nx=self.DIM,
             noise_sigma=torch.diag((0.5 * action_limit).square()),
             num_samples=num_samples,
             horizon=horizon,
-            lambda_=1.0,
+            lambda_=0.01, # 지수 가중합 temperature
             u_min=-action_limit,
             u_max=action_limit,
         )

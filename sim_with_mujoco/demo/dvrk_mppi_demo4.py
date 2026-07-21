@@ -5,16 +5,16 @@ import mujoco
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from sim_with_mujoco.environment.env import DvrkEnv
+from sim_with_mujoco.environment.dvrk_obstacle_env import DvrkNeedleObstacleEnv
 from sim_with_mujoco.rl.models.dynamics_dvrk import RBFEKFDynamics
-from sim_with_mujoco.rl.planners.mppi_pytorch import DvrkRBFMPPIPlanner
+from sim_with_mujoco.rl.planners.mppi import dVRKMPPIPlanner
 from sim_with_mujoco.utils.dvrk_ik import get_site_transform, solve_rcm_ik
 from sim_with_mujoco.utils.math3d import get_body_T
 from sim_with_mujoco.viewer.surrol_keyboard_viewer import SurrolKeyboardViewer
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-XML_PATH = ROOT_DIR / "assets" / "robots" / "dvrk" / "scene_psm_surrol_needle_reach.xml"
+XML_PATH = ROOT_DIR / "assets" / "robots" / "dvrk" / "scene_psm_surrol_needle_obstacle.xml"
 ACTION_LIMIT = np.array([0.004, 0.004, 0.004, 0.05, 0.05, 0.05, 0.05], dtype=np.float32)
 
 
@@ -30,15 +30,17 @@ def get_state(env, ecm_id, jaw_qpos_id):
 
 
 def main():
-    env = DvrkEnv(XML_PATH, control_steps=10)
+    env = DvrkNeedleObstacleEnv(XML_PATH, control_steps=10)
     env.reset()
     ecm_id = env.get_id(mujoco.mjtObj.mjOBJ_BODY, "ECM_tool_roll_link")
     jaw_joint_id = env.get_id(mujoco.mjtObj.mjOBJ_JOINT, "PSM1_jaw")
     jaw_actuator_id = env.get_id(mujoco.mjtObj.mjOBJ_ACTUATOR, "PSM1_jaw")
     jaw_qpos_id = env.model.jnt_qposadr[jaw_joint_id]
 
-    state, world_T_ecm, ecm_T_tip = get_state(env, ecm_id, jaw_qpos_id)
-    target_position = (np.linalg.inv(world_T_ecm) @ np.r_[env.data.site_xpos[env.target_site_id], 1.0])[:3]
+    state, world_T_ecm, _ = get_state(env, ecm_id, jaw_qpos_id)
+    ecm_T_world = np.linalg.inv(world_T_ecm)
+    target_position = (ecm_T_world @ np.r_[env.data.site_xpos[env.target_site_id], 1.0])[:3]
+    obstacle_position = (ecm_T_world @ np.r_[env.obstacle_position, 1.0])[:3]
     goal = state.copy()
     goal[:3] = target_position
 
@@ -54,12 +56,17 @@ def main():
     centers[:, 0, 1] = 0.0
     widths = (base_width[:, None] * rng.uniform(0.75, 1.25, size=(7, num_basis))).astype(np.float32)
     dynamics = RBFEKFDynamics(centers, widths, weights=np.ones((7, num_basis), dtype=np.float32))
-    planner = DvrkRBFMPPIPlanner(dynamics)
+    planner = dVRKMPPIPlanner(
+        dynamics,
+        obstacle_position,
+        env.obstacle_radius,
+        tip_radius=env.TIP_RADIUS,
+    )
     planner.set_goal(goal)
 
     viewer = SurrolKeyboardViewer(env.model, env.data)
     viewer.init_viewer(
-        window_title="MyJoCo dVRK RBF-EKF MPPI",
+        window_title="dVRK MPPI",
         initial_camera=(180, -20, 0.55),
         focus_position=env.data.site_xpos[env.target_site_id],
     )
@@ -89,9 +96,9 @@ def main():
             )
             for joint_id, actuator_id in zip(env.joint_ids, env.arm_actuator_ids):
                 target_qpos = q_des[env.model.jnt_qposadr[joint_id]]
-                if env.model.actuator_ctrllimited[actuator_id]:
-                    target_qpos = np.clip(target_qpos, *env.model.actuator_ctrlrange[actuator_id])
-                env.data.ctrl[actuator_id] = target_qpos
+                env.data.ctrl[actuator_id] = np.clip(
+                    target_qpos, *env.model.actuator_ctrlrange[actuator_id]
+                )
             env.data.ctrl[jaw_actuator_id] = np.clip(
                 state[6] + action[6],
                 *env.model.actuator_ctrlrange[jaw_actuator_id],
@@ -109,7 +116,8 @@ def main():
     finally:
         viewer.terminate_viewer()
 
-    print("success" if tip_error <= env.tolerance else "failed")
+    success = tip_error <= env.tolerance
+    print(f"{'success' if success else 'failed'}")
 
 
 if __name__ == "__main__":

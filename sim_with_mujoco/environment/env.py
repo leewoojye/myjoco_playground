@@ -219,7 +219,7 @@ class DvrkEnv(gym.Env):
     )
     ARM_ACTUATOR_NAMES = JOINT_NAMES
 
-    def __init__(self, xml_path, action_scale=0.004, max_steps=1000, tolerance=0.002, control_steps=10):
+    def __init__(self, xml_path, action_scale=0.004, max_steps=1000, tolerance=0.004, control_steps=10):
         super().__init__()
         self.plant = Environment(xml_path, "PSM1_tool_wrist_sca_ee_link")
         self.model, self.data = self.plant.model, self.plant.data
