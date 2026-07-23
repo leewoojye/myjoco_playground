@@ -21,9 +21,9 @@ class RBFEKFDynamics(nn.Module):
         weights = torch.as_tensor(weights, dtype=centers.dtype, device=centers.device)
 
         pose_weights = torch.zeros(
-            self.POSE_DIM,
-            self.num_basis,
-            self.POSE_DIM,
+            self.POSE_DIM,  # 출력축
+            self.num_basis,  # RBF 인덱스
+            self.POSE_DIM,  # 입력 action축
             dtype=centers.dtype,
             device=centers.device,
         )
@@ -38,14 +38,14 @@ class RBFEKFDynamics(nn.Module):
         self.register_buffer(
             "pose_scale",
             torch.tensor(
-                [0.004, 0.004, 0.004, 0.05, 0.05, 0.05],
+                [0.004, 0.004, 0.004, 0.05, 0.05, 0.05],  # 위치와 회전 명령을 약 크기 1로 정규화 (스케일링)
                 dtype=centers.dtype,
                 device=centers.device,
             ),
         )
         self.register_buffer(
             "jaw_scale",
-            torch.tensor(0.05, dtype=centers.dtype, device=centers.device),
+            torch.tensor(0.05, dtype=centers.dtype, device=centers.device),  # 스케일링
         )
         self.register_buffer("pose_weights", pose_weights)
         self.register_buffer("jaw_weights", weights[6].clone() - 1.0)
@@ -66,14 +66,17 @@ class RBFEKFDynamics(nn.Module):
             ),
         )
 
+    # 현재 (state, action)이 각 RBF 중심과 얼마나 가까운지 계산
     def basis(self, state, action):
         center_state = self.centers[: self.POSE_DIM, :, 0].transpose(0, 1)
         center_action = self.centers[: self.POSE_DIM, :, 1].transpose(0, 1)
         pose_width = self.widths[: self.POSE_DIM].transpose(0, 1)
         state_position_error = state[..., None, :3] - center_state[:, :3]
         state_rotation_error = self.relative_rotation_vector(center_state[:, 3:6], state[..., None, 3:6])
-        action_position_error = action[..., None, :3] - center_action[:, :3]
-        action_rotation_error = self.body_rotation_vector_difference(center_action[:, 3:6], action[..., None, 3:6])
+        action_position_error = action[..., None, :3] - center_action[:, :3]  # 위치는 단순 뺼셈
+        action_rotation_error = self.body_rotation_vector_difference(
+            center_action[:, 3:6], action[..., None, 3:6]
+        )  # 회전벡터를 그대로 빼지 않고 SO(3) 상대회전 계산
         pose_error = torch.cat(
             (
                 state_position_error,
@@ -83,28 +86,38 @@ class RBFEKFDynamics(nn.Module):
             ),
             dim=-1,
         )
-        pose_width = torch.cat((pose_width, pose_width), dim=-1)
-        pose_basis = torch.exp(-0.5 * (pose_error / pose_width).square().sum(dim=-1))
+        pose_width = torch.cat(
+            (pose_width, pose_width), dim=-1
+        )  # pose는 state/action의 같은 축에 동일한 width를 재사용
+        pose_basis = torch.exp(-0.5 * (pose_error / pose_width).square().sum(dim=-1))  # 최종 pose는 가우시안
 
+        # jaw는 2차원 쌍으로 별도 RBF 계산
         jaw_pair = torch.stack((state[..., 6], action[..., 6]), dim=-1)
         jaw_error = jaw_pair.unsqueeze(-2) - self.centers[6]
         jaw_basis = torch.exp(-jaw_error.square().sum(dim=-1) / (2.0 * self.widths[6].square()))
         return pose_basis, jaw_basis
 
+    # mppi rollout에서 다음 상태를 예측
+    # normalized_increment = normalized_action + F(state, action)*normalized_action
     def forward(self, state, action):
         state = torch.as_tensor(state, dtype=self.centers.dtype, device=self.centers.device)
         action = torch.as_tensor(action, dtype=self.centers.dtype, device=self.centers.device)
         pose_basis, jaw_basis = self.basis(state, action)
-        normalized_action = action[..., : self.POSE_DIM] / self.pose_scale
-        residual_gain = torch.einsum("...n,jnl->...jl", pose_basis, self.pose_weights)
+        normalized_action = action[..., : self.POSE_DIM] / self.pose_scale  # pose action 정규화
+        residual_gain = torch.einsum("...n,jnl->...jl", pose_basis, self.pose_weights)  # (normalized residual)
+        # normalized_increment = normalized_action + F(state, action)*normalized_action
         normalized_increment = normalized_action + torch.einsum("...jl,...l->...j", residual_gain, normalized_action)
-        pose_increment = self.pose_scale * normalized_increment
+        pose_increment = self.pose_scale * normalized_increment  # normalized에서 실제 단위로 복원
         jaw_increment = ((1.0 + (jaw_basis * self.jaw_weights).sum(dim=-1)) * action[..., 6]).unsqueeze(-1)
+        # 가중합하여 6x6 보정 행렬 생성
         position = state[..., :3] + pose_increment[..., :3]
+        # 회전 합성
         rotation = self.compose_rotation_vectors(-pose_increment[..., 3:6], state[..., 3:6])
         jaw = state[..., 6:7] + jaw_increment
         return torch.cat((position, rotation, jaw), dim=-1)
 
+    # 실제 MuJoCo step 결과를 이용해 RBF 가중치를 온라인으로 수정 (EKF)
+    # 역전파 비활성화
     @torch.no_grad()
     def update(self, state, action, next_state):
         state = torch.as_tensor(state, dtype=self.centers.dtype, device=self.centers.device)
@@ -112,12 +125,15 @@ class RBFEKFDynamics(nn.Module):
         next_state = torch.as_tensor(next_state, dtype=self.centers.dtype, device=self.centers.device)
 
         pose_basis, jaw_basis = self.basis(state, action)
+        # 관측된 pose 변화량
         observed_pose_increment = torch.cat((
             next_state[:3] - state[:3],
             self.relative_rotation_vector(state[3:6], next_state[3:6]),
         ))
+        # 정규화
         observed_pose_increment = observed_pose_increment / self.pose_scale
         normalized_action = action[: self.POSE_DIM] / self.pose_scale
+        # EKF가 RBF 가중치 학습시 사용하는 입력벡터, RBF 활성도와 정규화된 action의 외적(dim=60)
         pose_feature = (pose_basis[:, None] * normalized_action[None, :]).reshape(-1)
         pose_weights = self.pose_weights.reshape(self.POSE_DIM, -1)
 
