@@ -1,0 +1,26 @@
+{
+  "favorites.resources": [
+    {
+      "filePath": "sim_with_mujoco/utils/dvrk_ik.py",
+      "group": "Default"
+    },
+    {
+      "filePath": "assets/robots/dvrk/psm_surrol.xml",
+      "group": "Default"
+    },
+    {
+      "filePath": "temp/rlnn/2장코드.ipynb",
+      "group": "Default"
+    }
+  ],
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports.ruff": "explicit"
+    }
+  },
+  "python.defaultInterpreterPath": "${workspaceFolder}/venv/bin/python",
+  "ruff.configuration": "${workspaceFolder}/pyproject.toml",
+  "ruff.importStrategy": "fromEnvironment"
+}

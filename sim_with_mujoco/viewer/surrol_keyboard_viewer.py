@@ -6,8 +6,6 @@ import numpy as np
 
 
 class SurrolKeyboardViewer:
-    """MuJoCo viewer with the SurRoL-v2 keyboard-preview PSM action mapping."""
-
     KEY_INITIAL_DELAY = 0.12
     KEY_REPEAT_INTERVAL = 1.0 / 20.0
     PSM_INCREMENT = 0.006

@@ -1,5 +1,40 @@
+import numpy as np
 import torch
+from sklearn.cluster import KMeans
 from torch import nn
+
+
+def init_rbf(states, actions, num_basis=10):
+    states = np.asarray(states, dtype=np.float32)
+    actions = np.asarray(actions, dtype=np.float32)
+    state_pose_scale = np.array([0.05, 0.05, 0.05, 0.05, 0.05, 0.05], dtype=np.float32)
+    action_pose_scale = np.array([0.004, 0.004, 0.004, 0.05, 0.05, 0.05], dtype=np.float32)
+    jaw_scale = 0.05
+
+    pose_data = np.c_[states[:, :6] / state_pose_scale, actions[:, :6] / action_pose_scale]
+    jaw_data = np.c_[states[:, 6] / jaw_scale, actions[:, 6] / jaw_scale]
+    models, sigmas = [], []
+    for data in (pose_data, jaw_data):
+        model = KMeans(n_clusters=num_basis, n_init=10, random_state=0).fit(data)
+        sigma = [
+            np.sqrt(np.mean(np.sum((data[model.labels_ == i] - model.cluster_centers_[i]) ** 2, axis=1)))
+            for i in range(num_basis)
+        ]
+        models.append(model)
+        sigmas.append(np.maximum(sigma, 0.1))
+
+    pose_kmeans, jaw_kmeans = models
+    pose_sigma, jaw_sigma = sigmas
+    centers = np.empty((7, num_basis, 2), dtype=np.float32)
+    centers[:6, :, 0] = pose_kmeans.cluster_centers_[:, :6].T * state_pose_scale[:, None]
+    centers[:6, :, 1] = pose_kmeans.cluster_centers_[:, 6:].T * action_pose_scale[:, None]
+    centers[6] = jaw_kmeans.cluster_centers_ * jaw_scale
+
+    widths = np.empty((7, num_basis, 2), dtype=np.float32)
+    widths[:6, :, 0] = state_pose_scale[:, None] * pose_sigma
+    widths[:6, :, 1] = action_pose_scale[:, None] * pose_sigma
+    widths[6] = jaw_scale * jaw_sigma[:, None]
+    return centers, widths
 
 
 class RBFEKFDynamics(nn.Module):
@@ -70,7 +105,8 @@ class RBFEKFDynamics(nn.Module):
     def basis(self, state, action):
         center_state = self.centers[: self.POSE_DIM, :, 0].transpose(0, 1)
         center_action = self.centers[: self.POSE_DIM, :, 1].transpose(0, 1)
-        pose_width = self.widths[: self.POSE_DIM].transpose(0, 1)
+        state_width = self.widths[: self.POSE_DIM, :, 0].transpose(0, 1)
+        action_width = self.widths[: self.POSE_DIM, :, 1].transpose(0, 1)
         state_position_error = state[..., None, :3] - center_state[:, :3]
         state_rotation_error = self.relative_rotation_vector(center_state[:, 3:6], state[..., None, 3:6])
         action_position_error = action[..., None, :3] - center_action[:, :3]  # 위치는 단순 뺼셈
@@ -86,15 +122,13 @@ class RBFEKFDynamics(nn.Module):
             ),
             dim=-1,
         )
-        pose_width = torch.cat(
-            (pose_width, pose_width), dim=-1
-        )  # pose는 state/action의 같은 축에 동일한 width를 재사용
+        pose_width = torch.cat((state_width, action_width), dim=-1)
         pose_basis = torch.exp(-0.5 * (pose_error / pose_width).square().sum(dim=-1))  # 최종 pose는 가우시안
 
         # jaw는 2차원 쌍으로 별도 RBF 계산
         jaw_pair = torch.stack((state[..., 6], action[..., 6]), dim=-1)
         jaw_error = jaw_pair.unsqueeze(-2) - self.centers[6]
-        jaw_basis = torch.exp(-jaw_error.square().sum(dim=-1) / (2.0 * self.widths[6].square()))
+        jaw_basis = torch.exp(-0.5 * (jaw_error / self.widths[6]).square().sum(dim=-1))
         return pose_basis, jaw_basis
 
     # mppi rollout에서 다음 상태를 예측
@@ -160,6 +194,15 @@ class RBFEKFDynamics(nn.Module):
         jaw_eye = torch.eye(self.num_basis, dtype=state.dtype, device=state.device)
         jaw_correction = jaw_eye - jaw_gain.unsqueeze(-1) * jaw_feature.unsqueeze(0)
         self.jaw_covariance.copy_(jaw_correction @ jaw_covariance_prior)
+        return {
+            "pose_basis": pose_basis.detach().cpu(),
+            "jaw_basis": jaw_basis.detach().cpu(),
+            "pose_feature": pose_feature.detach().cpu(),
+            "pose_gain": pose_gain.detach().cpu(),
+            "pose_innovation": pose_innovation.detach().cpu(),
+            "jaw_gain": jaw_gain.detach().cpu(),
+            "jaw_innovation": jaw_innovation.detach().cpu(),
+        }
 
     @staticmethod
     def _rotation_vector_to_quaternion(rotation_vector):

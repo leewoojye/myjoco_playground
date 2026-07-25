@@ -3,19 +3,19 @@ from pathlib import Path
 import glfw
 import mujoco
 import numpy as np
+import torch
 from scipy.spatial.transform import Rotation
 
 from sim_with_mujoco.environment.dvrk_obstacle_env import DvrkNeedleObstacleEnv
-from sim_with_mujoco.rl.models.dynamics_dvrk import RBFEKFDynamics
+from sim_with_mujoco.rl.models.dynamics_dvrk import RBFEKFDynamics, init_rbf
 from sim_with_mujoco.rl.planners.mppi import dVRKMPPIPlanner
 from sim_with_mujoco.utils.dvrk_ik import get_site_transform, solve_rcm_ik
 from sim_with_mujoco.utils.math3d import get_body_T
 from sim_with_mujoco.viewer.surrol_keyboard_viewer import SurrolKeyboardViewer
 
-
 ROOT_DIR = Path(__file__).resolve().parents[2]
 XML_PATH = ROOT_DIR / "assets" / "robots" / "dvrk" / "scene_psm_surrol_needle_obstacle.xml"
-ACTION_LIMIT = np.array([0.004, 0.004, 0.004, 0.05, 0.05, 0.05, 0.05], dtype=np.float32)
+TRACE_PATH = ROOT_DIR / "temp" / "dvrk_mppi_demo4_trace.pt"
 
 
 def get_state(env, ecm_id, jaw_qpos_id):
@@ -44,18 +44,12 @@ def main():
     goal = state.copy()
     goal[:3] = target_position
 
-    num_basis = 10
-    rng = np.random.default_rng(0)
-    base_width = 2.0 * np.maximum(np.abs(goal - state), ACTION_LIMIT)
-    path = np.linspace(0.0, 1.0, num_basis, dtype=np.float32)
-    centers = np.empty((7, num_basis, 2), dtype=np.float32)
-    centers[:, :, 0] = state[:, None] + (goal - state)[:, None] * path
-    centers[:, :, 0] += rng.normal(size=(7, num_basis)) * 0.1 * base_width[:, None]
-    centers[:, 0, 0], centers[:, -1, 0] = state, goal
-    centers[:, :, 1] = rng.uniform(-ACTION_LIMIT[:, None], ACTION_LIMIT[:, None], size=(7, num_basis))
-    centers[:, 0, 1] = 0.0
-    widths = (base_width[:, None] * rng.uniform(0.75, 1.25, size=(7, num_basis))).astype(np.float32)
-    dynamics = RBFEKFDynamics(centers, widths, weights=np.ones((7, num_basis), dtype=np.float32))
+    samples = torch.load(TRACE_PATH, map_location="cpu", weights_only=True)["steps"]
+    centers, widths = init_rbf(
+        torch.stack([sample["state"] for sample in samples]).numpy(),
+        torch.stack([sample["action"] for sample in samples]).numpy(),
+    )
+    dynamics = RBFEKFDynamics(centers, widths, weights=np.ones(centers.shape[:2], dtype=np.float32))
     planner = dVRKMPPIPlanner(
         dynamics,
         obstacle_position,
@@ -63,6 +57,7 @@ def main():
         tip_radius=env.TIP_RADIUS,
     )
     planner.set_goal(goal)
+    trace = []
 
     viewer = SurrolKeyboardViewer(env.model, env.data)
     viewer.init_viewer(
@@ -79,7 +74,18 @@ def main():
                 break
 
             state, world_T_ecm, ecm_T_tip = get_state(env, ecm_id, jaw_qpos_id)
+            nominal_before = torch.roll(planner.mppi.U.detach().cpu().clone(), -1, dims=0)
+            nominal_before[-1] = planner.mppi.u_init.detach().cpu()
             action = planner.command(state)
+            mppi = planner.mppi
+            step_trace = {
+                "state": torch.from_numpy(state.copy()),
+                "rollout_position": mppi.states[0, ..., :3].detach().cpu().clone(),
+                "rollout_cost": mppi.cost_total.detach().cpu().clone(),
+                "rollout_weight": mppi.omega.detach().cpu().clone(),
+                "nominal_before": nominal_before,
+                "nominal_after": mppi.U.detach().cpu().clone(),
+            }
             target_T_ecm = ecm_T_tip.copy()
             target_T_ecm[:3, 3] += action[:3]
             target_T_ecm[:3, :3] = ecm_T_tip[:3, :3] @ Rotation.from_rotvec(action[3:6]).as_matrix()
@@ -96,9 +102,7 @@ def main():
             )
             for joint_id, actuator_id in zip(env.joint_ids, env.arm_actuator_ids):
                 target_qpos = q_des[env.model.jnt_qposadr[joint_id]]
-                env.data.ctrl[actuator_id] = np.clip(
-                    target_qpos, *env.model.actuator_ctrlrange[actuator_id]
-                )
+                env.data.ctrl[actuator_id] = np.clip(target_qpos, *env.model.actuator_ctrlrange[actuator_id])
             env.data.ctrl[jaw_actuator_id] = np.clip(
                 state[6] + action[6],
                 *env.model.actuator_ctrlrange[jaw_actuator_id],
@@ -106,7 +110,19 @@ def main():
             env.plant.step(env.control_steps)
 
             next_state, _, _ = get_state(env, ecm_id, jaw_qpos_id)
-            dynamics.update(state, action, next_state)
+            pose_weights_before = dynamics.pose_weights.detach().cpu().clone()
+            jaw_weights_before = dynamics.jaw_weights.detach().cpu().clone()
+            ekf_trace = dynamics.update(state, action, next_state)
+            step_trace.update({
+                "action": torch.from_numpy(action.copy()),
+                "next_state": torch.from_numpy(next_state.copy()),
+                "pose_weights_before": pose_weights_before,
+                "pose_weights_after": dynamics.pose_weights.detach().cpu().clone(),
+                "jaw_weights_before": jaw_weights_before,
+                "jaw_weights_after": dynamics.jaw_weights.detach().cpu().clone(),
+                **ekf_trace,
+            })
+            trace.append(step_trace)
             tip_error = np.linalg.norm(goal[:3] - next_state[:3])
             viewer.set_overlay([f"Tip error: {tip_error * 1000.0:5.1f} mm"])
             viewer.render()
@@ -115,6 +131,17 @@ def main():
                 break
     finally:
         viewer.terminate_viewer()
+        TRACE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(
+            {
+                "goal": torch.from_numpy(goal.copy()),
+                "obstacle_position": torch.from_numpy(obstacle_position.copy()),
+                "obstacle_radius": env.obstacle_radius,
+                "steps": trace,
+            },
+            TRACE_PATH,
+        )
+        print(f"trace saved: {TRACE_PATH}")
 
     success = tip_error <= env.tolerance
     print(f"{'success' if success else 'failed'}")
