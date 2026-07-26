@@ -28,13 +28,18 @@ class dVRKMPPIPlanner:
             device=self.goal.device,
         )
         self.collision_radius = float(obstacle_radius + tip_radius)
-        action_limit = torch.tensor(
+        control_limit = torch.tensor(
             [0.004, 0.004, 0.004, 0.05, 0.05, 0.05, 0.05],
             dtype=self.goal.dtype,
             device=self.goal.device,
         )
 
-        def running_cost(state, action):
+        def rollout_dynamics(state, control):
+            action = control.clone()
+            action[..., :3] = state[..., :3] + control[..., :3]
+            return self.dynamics(state, action)
+
+        def running_cost(state, control):
             position_error = state[..., :3] - self.goal[:3]
             rotation_vector = -state[..., 3:6]
             angle = torch.linalg.vector_norm(rotation_vector, dim=-1)
@@ -56,7 +61,7 @@ class dVRKMPPIPlanner:
             return (
                 2000.0 * position_error.square().sum(dim=-1)
                 + collision_cost
-                + 0.01 * (action / action_limit).square().sum(dim=-1)
+                + 0.01 * (control / control_limit).square().sum(dim=-1)
             )
 
         def terminal_cost(states, actions):
@@ -65,16 +70,16 @@ class dVRKMPPIPlanner:
             return 17.0 * 2000.0 * position_error.square().sum(dim=-1)
 
         self.mppi = MPPI(
-            dynamics=self.dynamics,
+            dynamics=rollout_dynamics,
             running_cost=running_cost,
             terminal_state_cost=terminal_cost,
             nx=self.DIM,
-            noise_sigma=torch.diag((0.5 * action_limit).square()),
+            noise_sigma=torch.diag((0.5 * control_limit).square()),
             num_samples=num_samples,
             horizon=horizon,
             lambda_=0.01,
-            u_min=-action_limit,
-            u_max=action_limit,
+            u_min=-control_limit,
+            u_max=control_limit,
         )
 
     def set_goal(self, goal):
@@ -83,4 +88,7 @@ class dVRKMPPIPlanner:
 
     def command(self, state):
         state = torch.as_tensor(state, dtype=self.goal.dtype, device=self.goal.device)
-        return self.mppi.command(state).cpu().numpy().astype(np.float32)
+        control = self.mppi.command(state)
+        action = control.clone()
+        action[:3] = state[:3] + control[:3]
+        return action.cpu().numpy().astype(np.float32)

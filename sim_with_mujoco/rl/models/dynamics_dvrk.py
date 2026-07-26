@@ -4,14 +4,14 @@ from sklearn.cluster import KMeans
 from torch import nn
 
 
-def init_rbf(states, actions, num_basis=10):
+def init_rbf(states, actions, num_basis=20):
     states = np.asarray(states, dtype=np.float32)
     actions = np.asarray(actions, dtype=np.float32)
-    state_pose_scale = np.array([0.05, 0.05, 0.05, 0.05, 0.05, 0.05], dtype=np.float32)
-    action_pose_scale = np.array([0.004, 0.004, 0.004, 0.05, 0.05, 0.05], dtype=np.float32)
+    pose_scale = np.array([0.05, 0.05, 0.05, 0.05, 0.05, 0.05], dtype=np.float32)
     jaw_scale = 0.05
 
-    pose_data = np.c_[states[:, :6] / state_pose_scale, actions[:, :6] / action_pose_scale]
+    # pose_data: dim=12 (state 6, action 6)
+    pose_data = np.c_[states[:, :6] / pose_scale, actions[:, :6] / pose_scale]
     jaw_data = np.c_[states[:, 6] / jaw_scale, actions[:, 6] / jaw_scale]
     models, sigmas = [], []
     for data in (pose_data, jaw_data):
@@ -26,13 +26,12 @@ def init_rbf(states, actions, num_basis=10):
     pose_kmeans, jaw_kmeans = models
     pose_sigma, jaw_sigma = sigmas
     centers = np.empty((7, num_basis, 2), dtype=np.float32)
-    centers[:6, :, 0] = pose_kmeans.cluster_centers_[:, :6].T * state_pose_scale[:, None]
-    centers[:6, :, 1] = pose_kmeans.cluster_centers_[:, 6:].T * action_pose_scale[:, None]
+    centers[:6, :, 0] = pose_kmeans.cluster_centers_[:, :6].T * pose_scale[:, None]
+    centers[:6, :, 1] = pose_kmeans.cluster_centers_[:, 6:].T * pose_scale[:, None]
     centers[6] = jaw_kmeans.cluster_centers_ * jaw_scale
 
     widths = np.empty((7, num_basis, 2), dtype=np.float32)
-    widths[:6, :, 0] = state_pose_scale[:, None] * pose_sigma
-    widths[:6, :, 1] = action_pose_scale[:, None] * pose_sigma
+    widths[:6] = pose_scale[:, None, None] * pose_sigma[None, :, None]
     widths[6] = jaw_scale * jaw_sigma[:, None]
     return centers, widths
 
@@ -73,7 +72,7 @@ class RBFEKFDynamics(nn.Module):
         self.register_buffer(
             "pose_scale",
             torch.tensor(
-                [0.004, 0.004, 0.004, 0.05, 0.05, 0.05],  # 위치와 회전 명령을 약 크기 1로 정규화 (스케일링)
+                [0.05, 0.05, 0.05, 0.05, 0.05, 0.05],
                 dtype=centers.dtype,
                 device=centers.device,
             ),
@@ -132,12 +131,13 @@ class RBFEKFDynamics(nn.Module):
         return pose_basis, jaw_basis
 
     # mppi rollout에서 다음 상태를 예측
-    # normalized_increment = normalized_action + F(state, action)*normalized_action
+    # action position is an absolute ECM target; the model learns the response to its position error.
     def forward(self, state, action):
         state = torch.as_tensor(state, dtype=self.centers.dtype, device=self.centers.device)
         action = torch.as_tensor(action, dtype=self.centers.dtype, device=self.centers.device)
         pose_basis, jaw_basis = self.basis(state, action)
-        normalized_action = action[..., : self.POSE_DIM] / self.pose_scale  # pose action 정규화
+        pose_action = torch.cat((action[..., :3] - state[..., :3], action[..., 3:6]), dim=-1)
+        normalized_action = pose_action / self.pose_scale
         residual_gain = torch.einsum("...n,jnl->...jl", pose_basis, self.pose_weights)  # (normalized residual)
         # normalized_increment = normalized_action + F(state, action)*normalized_action
         normalized_increment = normalized_action + torch.einsum("...jl,...l->...j", residual_gain, normalized_action)
@@ -166,7 +166,8 @@ class RBFEKFDynamics(nn.Module):
         ))
         # 정규화
         observed_pose_increment = observed_pose_increment / self.pose_scale
-        normalized_action = action[: self.POSE_DIM] / self.pose_scale
+        pose_action = torch.cat((action[:3] - state[:3], action[3:6]))
+        normalized_action = pose_action / self.pose_scale
         # EKF가 RBF 가중치 학습시 사용하는 입력벡터, RBF 활성도와 정규화된 action의 외적(dim=60)
         pose_feature = (pose_basis[:, None] * normalized_action[None, :]).reshape(-1)
         pose_weights = self.pose_weights.reshape(self.POSE_DIM, -1)

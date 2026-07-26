@@ -44,10 +44,22 @@ def main():
     goal = state.copy()
     goal[:3] = target_position
 
-    samples = torch.load(TRACE_PATH, map_location="cpu", weights_only=True)["steps"]
+    previous_trace = torch.load(TRACE_PATH, map_location="cpu", weights_only=True)
+    samples = previous_trace["steps"]
+    sample_states = torch.stack([sample["state"] for sample in samples])
+    sample_actions = torch.stack(
+        [sample["rbf_action"] if "rbf_action" in sample else sample["action"] for sample in samples]
+    )
+    if previous_trace.get("rbf_position_action", previous_trace.get("position_action")) != "absolute_ecm":
+        sample_actions[:, :3] += sample_states[:, :3]
+    state_batches, action_batches = [sample_states], [sample_actions]
+    for sample in samples:
+        if "rbf_candidate_states" in sample:
+            state_batches.append(sample["rbf_candidate_states"].reshape(-1, 7))
+            action_batches.append(sample["rbf_candidate_actions"].reshape(-1, 7))
     centers, widths = init_rbf(
-        torch.stack([sample["state"] for sample in samples]).numpy(),
-        torch.stack([sample["action"] for sample in samples]).numpy(),
+        torch.cat(state_batches).numpy(),
+        torch.cat(action_batches).numpy(),
     )
     dynamics = RBFEKFDynamics(centers, widths, weights=np.ones(centers.shape[:2], dtype=np.float32))
     planner = dVRKMPPIPlanner(
@@ -78,8 +90,16 @@ def main():
             nominal_before[-1] = planner.mppi.u_init.detach().cpu()
             action = planner.command(state)
             mppi = planner.mppi
+            candidate_states = torch.cat(
+                (mppi.state.expand(mppi.K, -1).unsqueeze(1), mppi.states[0, :, :-1]),
+                dim=1,
+            )
+            candidate_actions = mppi.actions[0].clone()
+            candidate_actions[..., :3] += candidate_states[..., :3]
             step_trace = {
                 "state": torch.from_numpy(state.copy()),
+                "rbf_candidate_states": candidate_states.detach().cpu(),
+                "rbf_candidate_actions": candidate_actions.detach().cpu(),
                 "rollout_position": mppi.states[0, ..., :3].detach().cpu().clone(),
                 "rollout_cost": mppi.cost_total.detach().cpu().clone(),
                 "rollout_weight": mppi.omega.detach().cpu().clone(),
@@ -87,7 +107,7 @@ def main():
                 "nominal_after": mppi.U.detach().cpu().clone(),
             }
             target_T_ecm = ecm_T_tip.copy()
-            target_T_ecm[:3, 3] += action[:3]
+            target_T_ecm[:3, 3] = action[:3]
             target_T_ecm[:3, :3] = ecm_T_tip[:3, :3] @ Rotation.from_rotvec(action[3:6]).as_matrix()
 
             q_des = solve_rcm_ik(
@@ -114,7 +134,7 @@ def main():
             jaw_weights_before = dynamics.jaw_weights.detach().cpu().clone()
             ekf_trace = dynamics.update(state, action, next_state)
             step_trace.update({
-                "action": torch.from_numpy(action.copy()),
+                "rbf_action": torch.from_numpy(action.copy()),
                 "next_state": torch.from_numpy(next_state.copy()),
                 "pose_weights_before": pose_weights_before,
                 "pose_weights_after": dynamics.pose_weights.detach().cpu().clone(),
@@ -137,6 +157,7 @@ def main():
                 "goal": torch.from_numpy(goal.copy()),
                 "obstacle_position": torch.from_numpy(obstacle_position.copy()),
                 "obstacle_radius": env.obstacle_radius,
+                "rbf_position_action": "absolute_ecm",
                 "steps": trace,
             },
             TRACE_PATH,
