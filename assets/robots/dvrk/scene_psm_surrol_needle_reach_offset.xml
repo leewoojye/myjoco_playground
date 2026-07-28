@@ -1,4 +1,4 @@
-<mujoco model="surrol_psm_needle_obstacle_scene">
+<mujoco model="surrol_psm_needle_reach_offset_scene">
   <option timestep="0.002" integrator="implicitfast" gravity="0 0 0"/>
   <statistic center="0.0 0.45 0.45" extent="1.65"/>
 
@@ -18,8 +18,6 @@
     <material name="table_mat" rgba="0.62 0.66 0.68 1" specular="0.12" shininess="0.2"/>
     <material name="pad_mat" rgba="0.88 0.84 0.75 1" specular="0.05" shininess="0.1"/>
     <material name="needle_mat" rgba="1.00 0.18 0.02 1" specular="0.45" shininess="0.8"/>
-    <material name="target_mat" rgba="0.0 0.85 0.35 0.72"/>
-    <material name="obstacle_mat" rgba="0.85 0.08 0.12 1" specular="0.3" shininess="0.5"/>
   </asset>
 
   <worldbody>
@@ -30,7 +28,7 @@
       <attach model="dvrk_si_patient_side" prefix=""/>
     </body>
 
-    <body name="work_table" pos="0 -0.30 0">
+    <body name="work_table" pos="-0.0731 -0.3405 0">
       <geom name="work_table_top" type="box" pos="0 0 -0.015" size="0.22 0.45 0.015" material="table_mat"/>
       <geom name="work_table_leg_fl" type="box" pos="0.18 0.37 -0.145" size="0.014 0.014 0.115" material="table_mat"/>
       <geom name="work_table_leg_fr" type="box" pos="0.18 -0.37 -0.145" size="0.014 0.014 0.115" material="table_mat"/>
@@ -38,7 +36,7 @@
       <geom name="work_table_leg_br" type="box" pos="-0.18 -0.37 -0.145" size="0.014 0.014 0.115" material="table_mat"/>
     </body>
 
-    <body name="task_tray" pos="0 0 0.010">
+    <body name="task_tray" pos="-0.0731 -0.0405 0.010">
       <geom name="tray_base" type="box" size="0.085 0.060 0.010" material="tray_mat"/>
       <geom name="tray_wall_front" type="box" pos="0 -0.062 0.015" size="0.085 0.004 0.013" material="tray_mat"/>
       <geom name="tray_wall_back" type="box" pos="0 0.062 0.015" size="0.085 0.004 0.013" material="tray_mat"/>
@@ -47,20 +45,11 @@
       <geom name="task_pad" type="box" pos="0 0 0.012" size="0.070 0.046 0.0025" material="pad_mat"/>
     </body>
 
-    <body name="needle_body" pos="-0.0069 0.0005 0.028" euler="0 0 0.58">
+    <body name="needle_body" pos="-0.0800 -0.0400 0.028" euler="0 0 0.58">
       <geom name="needle_proxy" type="capsule" fromto="-0.020 0 0 0.020 0 0" size="0.0018" material="needle_mat" mass="0.006"/>
     </body>
-    <body name="needle_reach_marker" pos="-0.0069 0.0005 0.028">
+    <body name="needle_reach_marker" pos="-0.0800 -0.0400 0.028">
       <site name="needle_reach_target" size="0.007" rgba="0 0.85 0.35 1"/>
-    </body>
-
-    <body name="needle_path_obstacle_body" pos="-0.0010 0.00025 0.065">
-      <geom name="needle_path_obstacle" type="sphere" size="0.009" material="obstacle_mat"/>
-      <site name="needle_path_obstacle_center" size="0.002" rgba="1 1 1 1"/>
-    </body>
-
-    <body name="active_target_marker" mocap="true" pos="0.0 0.0 0.19">
-      <geom name="active_target_sphere" type="sphere" size="0.010" material="target_mat" contype="0" conaffinity="0"/>
     </body>
 
     <camera name="overview_camera" mode="fixed" pos="0.28 -0.58 0.47"

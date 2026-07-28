@@ -3,6 +3,51 @@ import torch
 from pytorch_mppi import MPPI
 
 
+class LowFrequencyMPPI(MPPI):
+    def __init__(self, *args, gamma=2.0, **kwargs):
+        self.gamma = float(gamma)
+        super().__init__(*args, **kwargs)
+
+    def _sample_noise(self, shape):
+        horizon = shape[-1]
+        num_frequencies = horizon // 2 + 1
+        frequency = torch.arange(num_frequencies, dtype=self.dtype, device=self.d)
+        frequency = torch.clamp(frequency / num_frequencies, min=1.0 / num_frequencies)
+        frequency_variance = frequency.pow(-self.gamma)
+        normalization = (
+            horizon**-2
+            * num_frequencies**self.gamma
+            * (
+                1.0
+                + 4.0
+                * torch
+                .arange(
+                    1,
+                    num_frequencies,
+                    dtype=self.dtype,
+                    device=self.d,
+                )
+                .pow(-self.gamma)
+                .sum()
+            )
+        )
+        frequency_std = torch.sqrt(frequency_variance / normalization)
+        frequency_std = frequency_std.reshape((1,) * (len(shape) - 1) + (num_frequencies, 1))
+        spectrum_shape = shape[:-1] + (num_frequencies, self.nu)
+        real = torch.randn(*spectrum_shape, dtype=self.dtype, device=self.d) * frequency_std
+        imag = torch.randn(*spectrum_shape, dtype=self.dtype, device=self.d) * frequency_std
+        imag[..., 0, :] = 0.0
+        if horizon % 2 == 0:
+            imag[..., -1, :] = 0.0
+
+        noise = torch.fft.irfft(torch.complex(real, imag), n=horizon, dim=-2)
+        if self._diagonal_sigma:
+            noise = noise * self._noise_sigma_sqrt_diag
+        else:
+            noise = noise @ self._noise_sigma_chol.T
+        return noise + self.noise_mu
+
+
 def log_dimensionless_jerk(positions, dt):
     velocity = torch.diff(positions, dim=-2) / dt
     jerk = torch.diff(velocity, n=2, dim=-2) / dt**2
@@ -23,11 +68,13 @@ class dVRKMPPIPlanner:
         obstacle_radius,
         rcm_position,
         num_samples=512,
-        horizon=25,
+        horizon=40,
         tip_radius=0.006,
         collision_weight=10000.0,
         ldj_weight=1.0,
         dt=0.02,
+        mppi_class=MPPI,
+        mppi_kwargs=None,
     ):
         self.dynamics = dynamics
         self.goal = torch.zeros(
@@ -47,7 +94,7 @@ class dVRKMPPIPlanner:
         )
         self.collision_radius = float(obstacle_radius + tip_radius)
         control_limit = torch.tensor(
-            [0.004, 0.004, 0.004, 0.05, 0.05, 0.05, 0.05],
+            [0.004, 0.004, 0.004, 0.06, 0.06, 0.06, 0.05],
             dtype=self.goal.dtype,
             device=self.goal.device,
         )
@@ -79,24 +126,18 @@ class dVRKMPPIPlanner:
             wrist_position = state[..., :3] - 0.010 * tip_direction
 
             shaft = wrist_position - self.rcm_position
-            shaft_t = (
-                (self.obstacle_position - self.rcm_position) * shaft
-            ).sum(dim=-1) / shaft.square().sum(dim=-1)
+            shaft_t = ((self.obstacle_position - self.rcm_position) * shaft).sum(dim=-1) / shaft.square().sum(dim=-1)
             shaft_closest = self.rcm_position + shaft_t.clamp(0.0, 1.0)[..., None] * shaft
 
             distal = state[..., :3] - wrist_position
-            distal_t = (
-                (self.obstacle_position - wrist_position) * distal
-            ).sum(dim=-1) / distal.square().sum(dim=-1)
+            distal_t = ((self.obstacle_position - wrist_position) * distal).sum(dim=-1) / distal.square().sum(dim=-1)
             distal_closest = wrist_position + distal_t.clamp(0.0, 1.0)[..., None] * distal
 
             collision_distance = torch.minimum(
                 torch.linalg.vector_norm(self.obstacle_position - shaft_closest, dim=-1),
                 torch.linalg.vector_norm(self.obstacle_position - distal_closest, dim=-1),
             )
-            collision_cost = collision_weight * torch.relu(
-                1.0 - collision_distance / self.collision_radius
-            ).square()
+            collision_cost = collision_weight * torch.relu(1.0 - collision_distance / self.collision_radius).square()
             ldj_cost = 0.0
             if ldj_weight and t == horizon - 1:
                 ldj_cost = -ldj_weight * log_dimensionless_jerk(torch.stack(rollout_positions, dim=-2), dt)
@@ -104,7 +145,10 @@ class dVRKMPPIPlanner:
                 2000.0 * position_error.square().sum(dim=-1)
                 + collision_cost
                 + ldj_cost
-                + 0.01 * (control / control_limit).square().sum(dim=-1) # 행동 크기에 대한 패널티를 부여하기 위해 mppi action은 증분으로 표현됨
+                + 0.01
+                * (control / control_limit)
+                .square()
+                .sum(dim=-1)  # 행동 크기에 대한 패널티를 부여하기 위해 mppi action은 증분으로 표현됨
             )
 
         def terminal_cost(states, actions):
@@ -116,7 +160,7 @@ class dVRKMPPIPlanner:
         #     position_error = final_state[..., :3] - self.goal[:3]
         #     return 17.0 * 2000.0 * position_error.square().sum(dim=-1)
 
-        self.mppi = MPPI(
+        self.mppi = mppi_class(
             dynamics=rollout_dynamics,
             running_cost=running_cost,
             terminal_state_cost=terminal_cost,
@@ -128,6 +172,7 @@ class dVRKMPPIPlanner:
             u_min=-control_limit,
             u_max=control_limit,
             step_dependent_dynamics=True,
+            **(mppi_kwargs or {}),
         )
 
     def set_goal(self, goal):
@@ -140,3 +185,13 @@ class dVRKMPPIPlanner:
         action = control.clone()
         action[:3] = state[:3] + control[:3]
         return action.cpu().numpy().astype(np.float32)
+
+
+class LFMPPIPlanner(dVRKMPPIPlanner):
+    def __init__(self, *args, gamma=2.0, **kwargs):
+        super().__init__(
+            *args,
+            mppi_class=LowFrequencyMPPI,
+            mppi_kwargs={"gamma": gamma},
+            **kwargs,
+        )

@@ -15,7 +15,7 @@ def init_rbf(states, actions, num_basis=20):
     jaw_data = np.c_[states[:, 6] / jaw_scale, actions[:, 6] / jaw_scale]
     models, sigmas = [], []
     for data in (pose_data, jaw_data):
-        model = KMeans(n_clusters=num_basis, n_init=10, random_state=0).fit(data)
+        model = KMeans(n_clusters=num_basis, n_init=1, random_state=0).fit(data)
         sigma = [
             np.sqrt(np.mean(np.sum((data[model.labels_ == i] - model.cluster_centers_[i]) ** 2, axis=1)))
             for i in range(num_basis)
