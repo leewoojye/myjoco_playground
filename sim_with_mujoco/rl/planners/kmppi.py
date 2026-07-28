@@ -2,6 +2,8 @@ import numpy as np
 import torch
 from pytorch_mppi import KMPPI
 
+from sim_with_mujoco.rl.planners.mppi import log_dimensionless_jerk
+
 
 class dVRKKMPPIPlanner:
     DIM = 7
@@ -9,15 +11,11 @@ class dVRKKMPPIPlanner:
     def __init__(
         self,
         dynamics,
-        obstacle_position,
-        obstacle_radius,
-        rcm_position,
         num_samples=512,
-        horizon=25,
-        num_support_pts=None,
-        tip_radius=0.006,
-        collision_weight=1000.0,
-        rcm_weight=20000.0,
+        horizon=20,
+        num_support_pts=5,
+        ldj_weight=1.0,
+        dt=0.02,
     ):
         self.dynamics = dynamics
         self.goal = torch.zeros(
@@ -25,63 +23,40 @@ class dVRKKMPPIPlanner:
             dtype=dynamics.centers.dtype,
             device=dynamics.centers.device,
         )
-        self.obstacle_position = torch.as_tensor(
-            obstacle_position,
-            dtype=self.goal.dtype,
-            device=self.goal.device,
-        )
-        self.rcm_position = torch.as_tensor(
-            rcm_position,
-            dtype=self.goal.dtype,
-            device=self.goal.device,
-        )
-        self.collision_radius = float(obstacle_radius + tip_radius)
         control_limit = torch.tensor(
-            [0.004, 0.004, 0.004, 0.05, 0.05, 0.05, 0.05],
+            [0.004, 0.004, 0.004, 0.06, 0.06, 0.06, 0.05],
             dtype=self.goal.dtype,
             device=self.goal.device,
         )
+        rollout_positions = []
 
-        def rollout_dynamics(state, control):
+        def rollout_dynamics(state, control, t):
+            if t == 0:
+                rollout_positions.clear()
+                rollout_positions.append(state[..., :3])
             action = control.clone()
             action[..., :3] = state[..., :3] + control[..., :3]
-            return self.dynamics(state, action)
+            next_state = self.dynamics(state, action)
+            rollout_positions.append(next_state[..., :3])
+            return next_state
 
-        def running_cost(state, control):
+        def running_cost(state, control, t):
             position_error = state[..., :3] - self.goal[:3]
-            rotation_vector = -state[..., 3:6]
-            angle = torch.linalg.vector_norm(rotation_vector, dim=-1)
-            local_z = torch.zeros_like(rotation_vector)
-            local_z[..., 2] = 1.0
-            cross_once = torch.linalg.cross(rotation_vector, local_z, dim=-1)
-            cross_twice = torch.linalg.cross(rotation_vector, cross_once, dim=-1)
-            shaft_direction = (
-                local_z
-                + torch.sinc(angle / torch.pi)[..., None] * cross_once
-                + 0.5 * torch.sinc(angle / (2.0 * torch.pi)).square()[..., None] * cross_twice
-            )
-            rcm_offset = self.rcm_position - state[..., :3]
-            rcm_deviation = torch.linalg.vector_norm(
-                torch.linalg.cross(rcm_offset, shaft_direction, dim=-1),
-                dim=-1,
-            )
-            obstacle_offset = self.obstacle_position - state[..., :3]
-            perpendicular = (
-                obstacle_offset - (obstacle_offset * shaft_direction).sum(dim=-1, keepdim=True) * shaft_direction
-            )
-            line_distance = torch.linalg.vector_norm(perpendicular, dim=-1)
-            collision_cost = collision_weight * torch.relu(1.0 - line_distance / self.collision_radius).square()
+            ldj_cost = 0.0
+            if ldj_weight and t == horizon - 1:
+                ldj_cost = -ldj_weight * log_dimensionless_jerk(torch.stack(rollout_positions, dim=-2), dt)
             return (
                 2000.0 * position_error.square().sum(dim=-1)
-                + rcm_weight * rcm_deviation.square()
-                + collision_cost
-                + 0.01 * (control / control_limit).square().sum(dim=-1) # 행동 크기에 대한 패널티를 부여하기 위해 mppi action은 증분으로 표현됨
+                + ldj_cost
+                + 0.01
+                * (
+                    4.0 * (control[..., :3] / control_limit[:3]).square().sum(dim=-1)
+                    + (control[..., 3:] / control_limit[3:]).square().sum(dim=-1)
+                )
             )
 
         def terminal_cost(states, actions):
-            final_state = states[..., -1, :]
-            position_error = final_state[..., :3] - self.goal[:3]
-            return 17.0 * 2000.0 * position_error.square().sum(dim=-1)
+            return 10.0 * running_cost(states[..., -1, :], actions[..., -1, :], 0)
 
         self.mppi = KMPPI(
             dynamics=rollout_dynamics,
@@ -92,9 +67,10 @@ class dVRKKMPPIPlanner:
             num_samples=num_samples,
             horizon=horizon,
             num_support_pts=num_support_pts,
-            lambda_=0.01,
+            lambda_=0.1,
             u_min=-control_limit,
             u_max=control_limit,
+            step_dependent_dynamics=True,
         )
 
     def set_goal(self, goal):

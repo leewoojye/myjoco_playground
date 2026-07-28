@@ -64,13 +64,8 @@ class dVRKMPPIPlanner:
     def __init__(
         self,
         dynamics,
-        obstacle_position,
-        obstacle_radius,
-        rcm_position,
         num_samples=512,
-        horizon=40,
-        tip_radius=0.006,
-        collision_weight=10000.0,
+        horizon=20,
         ldj_weight=1.0,
         dt=0.02,
         mppi_class=MPPI,
@@ -82,17 +77,6 @@ class dVRKMPPIPlanner:
             dtype=dynamics.centers.dtype,
             device=dynamics.centers.device,
         )
-        self.obstacle_position = torch.as_tensor(
-            obstacle_position,
-            dtype=self.goal.dtype,
-            device=self.goal.device,
-        )
-        self.rcm_position = torch.as_tensor(
-            rcm_position,
-            dtype=self.goal.dtype,
-            device=self.goal.device,
-        )
-        self.collision_radius = float(obstacle_radius + tip_radius)
         control_limit = torch.tensor(
             [0.004, 0.004, 0.004, 0.06, 0.06, 0.06, 0.05],
             dtype=self.goal.dtype,
@@ -112,48 +96,21 @@ class dVRKMPPIPlanner:
 
         def running_cost(state, control, t):
             position_error = state[..., :3] - self.goal[:3]
-            rotation_vector = -state[..., 3:6]
-            angle = torch.linalg.vector_norm(rotation_vector, dim=-1)
-            local_z = torch.zeros_like(rotation_vector)
-            local_z[..., 2] = 1.0
-            cross_once = torch.linalg.cross(rotation_vector, local_z, dim=-1)
-            cross_twice = torch.linalg.cross(rotation_vector, cross_once, dim=-1)
-            tip_direction = (
-                local_z
-                + torch.sinc(angle / torch.pi)[..., None] * cross_once
-                + 0.5 * torch.sinc(angle / (2.0 * torch.pi)).square()[..., None] * cross_twice
-            )
-            wrist_position = state[..., :3] - 0.010 * tip_direction
-
-            shaft = wrist_position - self.rcm_position
-            shaft_t = ((self.obstacle_position - self.rcm_position) * shaft).sum(dim=-1) / shaft.square().sum(dim=-1)
-            shaft_closest = self.rcm_position + shaft_t.clamp(0.0, 1.0)[..., None] * shaft
-
-            distal = state[..., :3] - wrist_position
-            distal_t = ((self.obstacle_position - wrist_position) * distal).sum(dim=-1) / distal.square().sum(dim=-1)
-            distal_closest = wrist_position + distal_t.clamp(0.0, 1.0)[..., None] * distal
-
-            collision_distance = torch.minimum(
-                torch.linalg.vector_norm(self.obstacle_position - shaft_closest, dim=-1),
-                torch.linalg.vector_norm(self.obstacle_position - distal_closest, dim=-1),
-            )
-            collision_cost = collision_weight * torch.relu(1.0 - collision_distance / self.collision_radius).square()
             ldj_cost = 0.0
             if ldj_weight and t == horizon - 1:
                 ldj_cost = -ldj_weight * log_dimensionless_jerk(torch.stack(rollout_positions, dim=-2), dt)
             return (
                 2000.0 * position_error.square().sum(dim=-1)
-                + collision_cost
                 + ldj_cost
                 + 0.01
-                * (control / control_limit)
-                .square()
-                .sum(dim=-1)  # 행동 크기에 대한 패널티를 부여하기 위해 mppi action은 증분으로 표현됨
+                * (
+                    4.0 * (control[..., :3] / control_limit[:3]).square().sum(dim=-1)
+                    + (control[..., 3:] / control_limit[3:]).square().sum(dim=-1)
+                )
             )
 
         def terminal_cost(states, actions):
-            # terminal scale: 5/8/15
-            return 5.0 * running_cost(states[..., -1, :], actions[..., -1, :], 0)
+            return 10.0 * running_cost(states[..., -1, :], actions[..., -1, :], 0)
 
         # def terminal_cost(states, actions):
         #     final_state = states[..., -1, :]
@@ -168,6 +125,7 @@ class dVRKMPPIPlanner:
             noise_sigma=torch.diag((0.5 * control_limit).square()),
             num_samples=num_samples,
             horizon=horizon,
+            # lambda_=1.0,
             lambda_=0.01,
             u_min=-control_limit,
             u_max=control_limit,

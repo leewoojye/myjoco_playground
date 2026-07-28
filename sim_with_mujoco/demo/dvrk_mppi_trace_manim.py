@@ -15,12 +15,10 @@ class DvrkMPPITraceScene(mn.ThreeDScene):
         trace = torch.load(TRACE_PATH, map_location="cpu", weights_only=True)
         steps = trace["steps"]
         goal = trace["goal"].numpy()
-        obstacle = trace["obstacle_position"].numpy()
-        obstacle_radius = float(trace["obstacle_radius"])
         num_basis = steps[0]["pose_basis"].numel()
 
         actual = torch.stack([steps[0]["state"][:3], *[step["next_state"][:3] for step in steps]]).numpy()
-        x_min, x_max, y_min, y_max, z_min, z_max = self._plot_range(steps, goal, obstacle, obstacle_radius)
+        x_min, x_max, y_min, y_max, z_min, z_max = self._plot_range(steps, goal)
         axes = mn.ThreeDAxes(
             x_range=[x_min, x_max, 10],
             y_range=[y_min, y_max, 10],
@@ -38,7 +36,6 @@ class DvrkMPPITraceScene(mn.ThreeDScene):
         projection.move_to([-3.5, 2.95, 0])
 
         goal_dot = mn.Dot3D(axes.c2p(*(goal[:3] * 1000)), color=mn.GREEN, radius=0.08)
-        obstacle_shape = self._obstacle_shape(axes, obstacle, obstacle_radius)
         rollouts = self._rollout_group(axes, steps[0])
         actual_path = self._path(axes, actual[:2], mn.WHITE, 4.0, 1.0)
         tip_dot = mn.Dot3D(axes.c2p(*(actual[1] * 1000)), color=mn.WHITE, radius=0.065)
@@ -49,7 +46,6 @@ class DvrkMPPITraceScene(mn.ThreeDScene):
                 self._legend_item(mn.BLUE_B, "sampled rollouts"),
                 self._legend_item(mn.YELLOW, "lowest cost"),
                 self._legend_item(mn.WHITE, "executed tip"),
-                self._legend_item(mn.RED, "obstacle"),
                 self._legend_item(mn.GREEN, "goal"),
             )
             .arrange(mn.RIGHT, buff=0.28)
@@ -104,7 +100,7 @@ class DvrkMPPITraceScene(mn.ThreeDScene):
             stats,
         )
         self.play(
-            mn.FadeIn(title, projection, legend, goal_dot, obstacle_shape),
+            mn.FadeIn(title, projection, legend, goal_dot),
             mn.Create(axes),
             mn.FadeIn(
                 rollouts,
@@ -145,15 +141,12 @@ class DvrkMPPITraceScene(mn.ThreeDScene):
         self.wait(0.8)
 
     @staticmethod
-    def _plot_range(steps, goal, obstacle, obstacle_radius):
+    def _plot_range(steps, goal):
         positions = torch.cat([step["rollout_position"].reshape(-1, 3) for step in steps]).numpy() * 1000
-        radius = obstacle_radius * 1000
         bounds = []
         for axis in range(3):
             values = np.r_[
                 positions[:, axis],
-                obstacle[axis] * 1000 - radius,
-                obstacle[axis] * 1000 + radius,
                 goal[axis] * 1000,
             ]
             bounds.extend((
@@ -182,25 +175,6 @@ class DvrkMPPITraceScene(mn.ThreeDScene):
             opacity = 0.95 if rank == 0 else 0.38 * (1.0 - rank / len(indices)) + 0.08
             paths.append(self._path(axes, step["rollout_position"][index].numpy(), color, width, opacity))
         return mn.VGroup(*paths)
-
-    @staticmethod
-    def _obstacle_shape(axes, obstacle, radius):
-        center = axes.c2p(*(obstacle * 1000))
-        shape = mn.Sphere(
-            center=center,
-            radius=1,
-            resolution=(12, 24),
-            color=mn.RED,
-            fill_color=mn.RED,
-            fill_opacity=0.2,
-            stroke_width=0.5,
-        )
-        for axis in range(3):
-            offset = obstacle.copy()
-            offset[axis] += radius
-            axis_radius = np.linalg.norm(axes.c2p(*(offset * 1000)) - center)
-            shape.stretch(axis_radius, axis, about_point=center)
-        return shape
 
     @staticmethod
     def _basis_bars(step, bottom, num_basis):

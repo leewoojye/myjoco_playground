@@ -8,7 +8,7 @@ from scipy.spatial.transform import Rotation
 
 from sim_with_mujoco.environment.dvrk_needle_reach_env import DvrkNeedleReachEnv
 from sim_with_mujoco.rl.models.dynamics_dvrk import RBFEKFDynamics
-from sim_with_mujoco.rl.planners.needle_reach_mppi import DvrkNeedleReachLFMPPIPlanner
+from sim_with_mujoco.rl.planners.mppi_lf import LFMPPIPlanner
 from sim_with_mujoco.utils.dvrk_ik import get_site_transform, solve_rcm_ik
 from sim_with_mujoco.utils.math3d import get_body_T
 from sim_with_mujoco.viewer.surrol_keyboard_viewer import SurrolKeyboardViewer
@@ -45,28 +45,11 @@ def main():
     goal = state.copy()
     goal[:3] = target_position
 
-    # previous_trace = torch.load(INIT_TRACE_PATH, map_location="cpu", weights_only=True)
-    # samples = previous_trace["steps"]
-    # sample_states = torch.stack([sample["state"] for sample in samples])
-    # sample_actions = torch.stack([
-    #     sample["rbf_action"] if "rbf_action" in sample else sample["action"] for sample in samples
-    # ])
-    # if previous_trace.get("rbf_position_action", previous_trace.get("position_action")) != "absolute_ecm":
-    #     sample_actions[:, :3] += sample_states[:, :3]
-    # state_batches, action_batches = [sample_states], [sample_actions]
-    # for sample in samples:
-    #     if "rbf_candidate_states" in sample:
-    #         state_batches.append(sample["rbf_candidate_states"].reshape(-1, 7))
-    #         action_batches.append(sample["rbf_candidate_actions"].reshape(-1, 7))
-    # centers, widths = init_rbf(
-    #     torch.cat(state_batches).numpy(),
-    #     torch.cat(action_batches).numpy(),
-    # )
     with np.load(RBF_PARAMS_PATH) as parameters:
         centers = parameters["centers"]
         widths = parameters["widths"]
     dynamics = RBFEKFDynamics(centers, widths, weights=np.ones(centers.shape[:2], dtype=np.float32))
-    planner = DvrkNeedleReachLFMPPIPlanner(
+    planner = LFMPPIPlanner(
         dynamics,
         gamma=2.0,
     )
@@ -75,7 +58,7 @@ def main():
 
     viewer = SurrolKeyboardViewer(env.model, env.data)
     viewer.init_viewer(
-        window_title="dVRK Low-Frequency MPPI Needle Reach",
+        window_title="dVRK MPPI DEMO",
         initial_camera=(180, -20, 0.55),
         focus_position=env.data.site_xpos[env.target_site_id],
     )
