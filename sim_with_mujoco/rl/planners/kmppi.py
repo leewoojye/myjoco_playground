@@ -1,19 +1,9 @@
 import numpy as np
 import torch
-from pytorch_mppi import MPPI
+from pytorch_mppi import KMPPI
 
 
-def log_dimensionless_jerk(positions, dt):
-    velocity = torch.diff(positions, dim=-2) / dt
-    jerk = torch.diff(velocity, n=2, dim=-2) / dt**2
-    duration = (positions.shape[-2] - 1) * dt
-    peak_speed_sq = torch.linalg.vector_norm(velocity, dim=-1).amax(dim=-1).square()
-    squared_jerk = jerk.square().sum(dim=(-2, -1)) * dt
-    dimensionless_jerk = duration**5 * squared_jerk / peak_speed_sq.clamp_min(torch.finfo(positions.dtype).eps)
-    return -torch.log(dimensionless_jerk.clamp_min(torch.finfo(positions.dtype).eps))
-
-
-class dVRKMPPIPlanner:
+class dVRKKMPPIPlanner:
     DIM = 7
 
     def __init__(
@@ -24,10 +14,10 @@ class dVRKMPPIPlanner:
         rcm_position,
         num_samples=512,
         horizon=25,
+        num_support_pts=None,
         tip_radius=0.006,
-        collision_weight=10000.0,
-        ldj_weight=1.0,
-        dt=0.02,
+        collision_weight=1000.0,
+        rcm_weight=20000.0,
     ):
         self.dynamics = dynamics
         self.goal = torch.zeros(
@@ -51,19 +41,13 @@ class dVRKMPPIPlanner:
             dtype=self.goal.dtype,
             device=self.goal.device,
         )
-        rollout_positions = []
 
-        def rollout_dynamics(state, control, t):
-            if t == 0:
-                rollout_positions.clear()
-                rollout_positions.append(state[..., :3])
+        def rollout_dynamics(state, control):
             action = control.clone()
             action[..., :3] = state[..., :3] + control[..., :3]
-            next_state = self.dynamics(state, action)
-            rollout_positions.append(next_state[..., :3])
-            return next_state
+            return self.dynamics(state, action)
 
-        def running_cost(state, control, t):
+        def running_cost(state, control):
             position_error = state[..., :3] - self.goal[:3]
             rotation_vector = -state[..., 3:6]
             angle = torch.linalg.vector_norm(rotation_vector, dim=-1)
@@ -71,52 +55,35 @@ class dVRKMPPIPlanner:
             local_z[..., 2] = 1.0
             cross_once = torch.linalg.cross(rotation_vector, local_z, dim=-1)
             cross_twice = torch.linalg.cross(rotation_vector, cross_once, dim=-1)
-            tip_direction = (
+            shaft_direction = (
                 local_z
                 + torch.sinc(angle / torch.pi)[..., None] * cross_once
                 + 0.5 * torch.sinc(angle / (2.0 * torch.pi)).square()[..., None] * cross_twice
             )
-            wrist_position = state[..., :3] - 0.010 * tip_direction
-
-            shaft = wrist_position - self.rcm_position
-            shaft_t = (
-                (self.obstacle_position - self.rcm_position) * shaft
-            ).sum(dim=-1) / shaft.square().sum(dim=-1)
-            shaft_closest = self.rcm_position + shaft_t.clamp(0.0, 1.0)[..., None] * shaft
-
-            distal = state[..., :3] - wrist_position
-            distal_t = (
-                (self.obstacle_position - wrist_position) * distal
-            ).sum(dim=-1) / distal.square().sum(dim=-1)
-            distal_closest = wrist_position + distal_t.clamp(0.0, 1.0)[..., None] * distal
-
-            collision_distance = torch.minimum(
-                torch.linalg.vector_norm(self.obstacle_position - shaft_closest, dim=-1),
-                torch.linalg.vector_norm(self.obstacle_position - distal_closest, dim=-1),
+            rcm_offset = self.rcm_position - state[..., :3]
+            rcm_deviation = torch.linalg.vector_norm(
+                torch.linalg.cross(rcm_offset, shaft_direction, dim=-1),
+                dim=-1,
             )
-            collision_cost = collision_weight * torch.relu(
-                1.0 - collision_distance / self.collision_radius
-            ).square()
-            ldj_cost = 0.0
-            if ldj_weight and t == horizon - 1:
-                ldj_cost = -ldj_weight * log_dimensionless_jerk(torch.stack(rollout_positions, dim=-2), dt)
+            obstacle_offset = self.obstacle_position - state[..., :3]
+            perpendicular = (
+                obstacle_offset - (obstacle_offset * shaft_direction).sum(dim=-1, keepdim=True) * shaft_direction
+            )
+            line_distance = torch.linalg.vector_norm(perpendicular, dim=-1)
+            collision_cost = collision_weight * torch.relu(1.0 - line_distance / self.collision_radius).square()
             return (
                 2000.0 * position_error.square().sum(dim=-1)
+                + rcm_weight * rcm_deviation.square()
                 + collision_cost
-                + ldj_cost
                 + 0.01 * (control / control_limit).square().sum(dim=-1) # 행동 크기에 대한 패널티를 부여하기 위해 mppi action은 증분으로 표현됨
             )
 
         def terminal_cost(states, actions):
-            # terminal scale: 5/8/15
-            return 5.0 * running_cost(states[..., -1, :], actions[..., -1, :], 0)
+            final_state = states[..., -1, :]
+            position_error = final_state[..., :3] - self.goal[:3]
+            return 17.0 * 2000.0 * position_error.square().sum(dim=-1)
 
-        # def terminal_cost(states, actions):
-        #     final_state = states[..., -1, :]
-        #     position_error = final_state[..., :3] - self.goal[:3]
-        #     return 17.0 * 2000.0 * position_error.square().sum(dim=-1)
-
-        self.mppi = MPPI(
+        self.mppi = KMPPI(
             dynamics=rollout_dynamics,
             running_cost=running_cost,
             terminal_state_cost=terminal_cost,
@@ -124,10 +91,10 @@ class dVRKMPPIPlanner:
             noise_sigma=torch.diag((0.5 * control_limit).square()),
             num_samples=num_samples,
             horizon=horizon,
+            num_support_pts=num_support_pts,
             lambda_=0.01,
             u_min=-control_limit,
             u_max=control_limit,
-            step_dependent_dynamics=True,
         )
 
     def set_goal(self, goal):

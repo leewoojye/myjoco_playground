@@ -2,6 +2,7 @@
 /venv/
 /.venv/
 /temp/
+/media/
 /sim_with_mujoco/temp/
 /.vscode/*
 !/.vscode/extensions.json

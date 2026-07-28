@@ -41,6 +41,7 @@ def main():
     ecm_T_world = np.linalg.inv(world_T_ecm)
     target_position = (ecm_T_world @ np.r_[env.data.site_xpos[env.target_site_id], 1.0])[:3]
     obstacle_position = (ecm_T_world @ np.r_[env.obstacle_position, 1.0])[:3]
+    rcm_position = (ecm_T_world @ np.r_[env.rcm_pos, 1.0])[:3]
     goal = state.copy()
     goal[:3] = target_position
 
@@ -66,6 +67,7 @@ def main():
         dynamics,
         obstacle_position,
         env.obstacle_radius,
+        rcm_position,
         tip_radius=env.TIP_RADIUS,
     )
     planner.set_goal(goal)
