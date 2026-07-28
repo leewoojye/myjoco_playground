@@ -45,10 +45,10 @@
       <geom name="task_pad" type="box" pos="0 0 0.012" size="0.070 0.046 0.0025" material="pad_mat"/>
     </body>
 
-    <body name="needle_body" pos="-0.0800 -0.0400 0.028" euler="0 0 0.58">
+    <body name="needle_body" pos="-0.077244 -0.037686 0.042562" euler="0 0 0.58">
       <geom name="needle_proxy" type="capsule" fromto="-0.020 0 0 0.020 0 0" size="0.0018" material="needle_mat" mass="0.006"/>
     </body>
-    <body name="needle_reach_marker" pos="-0.0800 -0.0400 0.028">
+    <body name="needle_reach_marker" pos="-0.077244 -0.037686 0.042562">
       <site name="needle_reach_target" size="0.007" rgba="0 0.85 0.35 1"/>
     </body>
 

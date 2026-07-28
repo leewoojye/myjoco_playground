@@ -11,7 +11,7 @@ class DvrkNeedleReachLFMPPIPlanner:
         self,
         dynamics,
         num_samples=512,
-        horizon=40,
+        horizon=20,
         ldj_weight=1.0,
         dt=0.02,
         gamma=2.0,
@@ -47,11 +47,17 @@ class DvrkNeedleReachLFMPPIPlanner:
             return (
                 2000.0 * position_error.square().sum(dim=-1)
                 + ldj_cost
-                + 0.01 * (control / control_limit).square().sum(dim=-1)
+                + 0.01
+                * (
+                    4.0 * (control[..., :3] / control_limit[:3]).square().sum(dim=-1)
+                    + (control[..., 3:] / control_limit[3:]).square().sum(dim=-1)
+                )
             )
 
+        # I2RIS 기준 terminal cost: T-1 timestep에서 비용
+        # 단, T-1 timestep에서 비용은 우회 궤적을 선호할 수도 있을 우려
         def terminal_cost(states, actions):
-            return 5.0 * running_cost(states[..., -1, :], actions[..., -1, :], 0)
+            return 10.0 * running_cost(states[..., -1, :], actions[..., -1, :], 0)
 
         self.mppi = LowFrequencyMPPI(
             dynamics=rollout_dynamics,
