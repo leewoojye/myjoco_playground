@@ -8,9 +8,10 @@ import torch
 from scipy.spatial.transform import Rotation
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
-TRACE_PATH = ROOT_DIR / "temp" / "dvrk_mppi_demo4_trace.pt"
+TRACE_PATH = ROOT_DIR / "temp" / "dvrk_mppi_lowfreq_reach_trace.pt"
 XML_PATH = ROOT_DIR / "assets" / "robots" / "dvrk" / "scene_psm_surrol_needle_reach_offset.xml"
 DT = 0.02
+CONTROL_LIMIT = torch.tensor([0.004, 0.004, 0.004, 0.06, 0.06, 0.06, 0.05])
 
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
@@ -26,6 +27,19 @@ def trace_states(trace_path=TRACE_PATH):
 def tip_trajectory(trace_path=TRACE_PATH):
     trace, states = trace_states(trace_path)
     return trace, states[:, :3]
+
+
+def trace_controls(trace, states):
+    actions = torch.stack([step["rbf_action"] for step in trace["steps"]])
+    controls = actions.clone()
+    controls[:, :3] -= states[:-1, :3]
+    return controls
+
+
+def control_second_difference(controls):
+    controls = torch.as_tensor(controls)
+    control_limit = CONTROL_LIMIT.to(dtype=controls.dtype, device=controls.device)
+    return torch.diff(controls, n=2, dim=-2) / control_limit
 
 
 def trajectory_kinematics(positions, dt=DT):
@@ -97,7 +111,7 @@ def rcm_deviation(trace_path=TRACE_PATH):
             tip_id,
             rcm_position,
             joint_ids,
-            dq_limit=0.035,
+            dq_limit=0.045,
             rcm_site_id=rcm_id,
         )
         for joint_id, actuator_id in zip(joint_ids, actuator_ids):
@@ -114,8 +128,10 @@ def rcm_deviation(trace_path=TRACE_PATH):
 
 
 def evaluate_trace(trace_path=TRACE_PATH, dt=DT):
-    _, states = trace_states(trace_path)
+    trace, states = trace_states(trace_path)
     positions = states[:, :3]
+    second_difference = control_second_difference(trace_controls(trace, states))
+    second_difference_norm = torch.linalg.vector_norm(second_difference, dim=-1)
     velocity, jerk = trajectory_kinematics(positions, dt)
     rcm_error = rcm_deviation(trace_path) * 1000.0
     return {
@@ -125,66 +141,63 @@ def evaluate_trace(trace_path=TRACE_PATH, dt=DT):
         "integrated_squared_jerk": (jerk.square().sum() * dt).item(),
         "rcm_mean_mm": rcm_error.mean().item(),
         "rcm_max_mm": rcm_error.max().item(),
+        "control_second_difference_rms": second_difference.square().sum(dim=-1).mean().sqrt().item(),
+        "control_second_difference_max": second_difference_norm.max().item(),
     }
 
 
-class LogDimensionlessJerkScene(mn.ThreeDScene):
+class LogDimensionlessJerkScene(mn.Scene):
     def construct(self):
         trace, states = trace_states()
         positions = states[:, :3]
+        second_difference = control_second_difference(trace_controls(trace, states))
         _, jerk = trajectory_kinematics(positions)
         positions = positions.numpy()
         goal = trace["goal"].numpy()
         tip_error = np.linalg.norm(positions - goal[:3], axis=-1) * 1000.0
         jerk_norm = torch.linalg.vector_norm(jerk, dim=-1).numpy()
         integrated_squared_jerk = np.cumsum(np.square(jerk_norm)) * DT
+        second_difference_norm = torch.linalg.vector_norm(second_difference, dim=-1).numpy()
         rcm_error = (rcm_deviation() * 1000.0).numpy()
         time = np.arange(len(positions)) * DT
         jerk_time = time[3:]
+        second_difference_time = time[2 : 2 + len(second_difference_norm)]
 
         self.camera.background_color = "#101318"
-        self.set_camera_orientation(phi=68 * mn.DEGREES, theta=-48 * mn.DEGREES, zoom=1.15)
-        title = mn.Text("dVRK Trajectory Metrics", font_size=34, weight="BOLD").to_edge(mn.UP)
+        title = mn.Text("dVRK Low-Frequency MPPI Metrics", font_size=34, weight="BOLD").to_edge(mn.UP)
 
-        path_axes = mn.ThreeDAxes(
+        path_axes = mn.Axes(
             x_range=self._range(positions[:, 0] * 1000.0, 10.0),
-            y_range=self._range(positions[:, 1] * 1000.0, 10.0),
-            z_range=self._range(positions[:, 2] * 1000.0, 10.0),
-            x_length=4.8,
-            y_length=4.2,
-            z_length=4.0,
+            y_range=self._range(positions[:, 2] * 1000.0, 10.0),
+            x_length=6.2,
+            y_length=5.5,
             tips=False,
             axis_config={"color": mn.GREY_B, "stroke_width": 2},
-        ).shift(3.8 * mn.LEFT + 0.15 * mn.DOWN)
-        path_label = mn.Text("ECM X-Y-Z tip path [mm]", font_size=21, color=mn.GREY_A).move_to(
-            3.45 * mn.LEFT + 2.7 * mn.UP
-        )
+        ).shift(3.55 * mn.LEFT + 0.15 * mn.DOWN)
+        path_label = mn.Text("ECM X-Z tip path [mm]", font_size=21, color=mn.GREY_A)
+        path_label.next_to(path_axes, mn.UP, buff=0.2)
 
-        path_points = [
-            path_axes.c2p(position[0] * 1000.0, position[1] * 1000.0, position[2] * 1000.0)
-            for position in positions
-        ]
+        path_points = [path_axes.c2p(position[0] * 1000.0, position[2] * 1000.0) for position in positions]
         path = mn.VMobject().set_points_as_corners(path_points).set_stroke(mn.WHITE, width=3)
-        goal_dot = mn.Dot3D(
-            path_axes.c2p(goal[0] * 1000.0, goal[1] * 1000.0, goal[2] * 1000.0),
-            color=mn.GREEN,
-            radius=0.07,
-        )
+        goal_dot = mn.Dot(path_axes.c2p(goal[0] * 1000.0, goal[2] * 1000.0), color=mn.GREEN, radius=0.07)
 
         high_jerk = np.flatnonzero(jerk_norm >= np.quantile(jerk_norm, 0.9)) + 3
         high_jerk_dots = mn.VGroup(*[
-            mn.Dot3D(path_points[index], color=mn.RED, radius=0.035) for index in high_jerk
+            mn.Dot(path_points[index], color=mn.RED, radius=0.035) for index in high_jerk
         ])
 
         duration = time[-1]
-        error_axes = self._time_axes(duration, tip_error, 1.0, 20.0).shift(3.4 * mn.RIGHT + 1.9 * mn.UP)
+        error_axes = self._time_axes(duration, tip_error, 0.8, 20.0).shift(3.4 * mn.RIGHT + 2.2 * mn.UP)
         integrated_jerk_axes = self._time_axes(
             duration,
             integrated_squared_jerk,
-            1.0,
+            0.8,
             max(float(integrated_squared_jerk[-1]) / 4.0, np.finfo(np.float32).eps),
-        ).shift(3.4 * mn.RIGHT + 0.05 * mn.UP)
-        rcm_axes = self._time_axes(duration, rcm_error, 1.0, 0.25).shift(3.4 * mn.RIGHT + 1.8 * mn.DOWN)
+        ).shift(3.4 * mn.RIGHT + 0.85 * mn.UP)
+        rcm_axes = self._time_axes(duration, rcm_error, 0.8, 0.25).shift(3.4 * mn.RIGHT + 0.5 * mn.DOWN)
+        second_difference_axes = self._time_axes(duration, second_difference_norm, 0.8, 0.5).shift(
+            3.4 * mn.RIGHT + 1.85 * mn.DOWN
+        )
         error_graph = error_axes.plot_line_graph(
             time,
             tip_error,
@@ -206,6 +219,13 @@ class LogDimensionlessJerkScene(mn.ThreeDScene):
             line_color=mn.ORANGE,
             stroke_width=3,
         )
+        second_difference_graph = second_difference_axes.plot_line_graph(
+            second_difference_time,
+            second_difference_norm,
+            add_vertex_dots=False,
+            line_color=mn.PURPLE_B,
+            stroke_width=3,
+        )
         error_label = mn.Text("tip error [mm]", font_size=19, color=mn.BLUE_B).next_to(
             error_axes, mn.UP, buff=0.12
         )
@@ -215,6 +235,11 @@ class LogDimensionlessJerkScene(mn.ThreeDScene):
         rcm_label = mn.Text("RCM deviation [mm]", font_size=19, color=mn.ORANGE).next_to(
             rcm_axes, mn.UP, buff=0.12
         )
+        second_difference_label = mn.Text(
+            "normalized control second difference",
+            font_size=19,
+            color=mn.PURPLE_B,
+        ).next_to(second_difference_axes, mn.UP, buff=0.12)
 
         ldlj = log_dimensionless_jerk(torch.from_numpy(positions)).item()
         metric = mn.VGroup(
@@ -232,14 +257,20 @@ class LogDimensionlessJerkScene(mn.ThreeDScene):
                 mn.DecimalNumber(rcm_error.max(), num_decimal_places=2, font_size=24, color=mn.ORANGE),
                 mn.Text("mm", font_size=18, color=mn.GREY_A),
             ).arrange(mn.RIGHT, buff=0.1),
-        ).arrange(mn.RIGHT, buff=0.45).to_edge(mn.DOWN)
+            mn.VGroup(
+                mn.Text("control D2 RMS", font_size=20, color=mn.GREY_A),
+                mn.DecimalNumber(
+                    np.sqrt(np.mean(second_difference_norm**2)),
+                    num_decimal_places=3,
+                    font_size=24,
+                    color=mn.PURPLE_B,
+                ),
+            ).arrange(mn.RIGHT, buff=0.1),
+        ).arrange(mn.RIGHT, buff=0.35).to_edge(mn.DOWN)
 
         tracker = mn.ValueTracker(0.0)
         tip_dot = mn.always_redraw(
-            lambda: mn.Dot3D(
-                path_points[self._index(tracker.get_value(), DT, len(path_points))],
-                color=mn.YELLOW,
-            )
+            lambda: mn.Dot(path_points[self._index(tracker.get_value(), DT, len(path_points))], color=mn.YELLOW)
         )
         error_dot = mn.always_redraw(
             lambda: mn.Dot(
@@ -271,28 +302,43 @@ class LogDimensionlessJerkScene(mn.ThreeDScene):
                 radius=0.055,
             )
         )
-
-        self.add_fixed_in_frame_mobjects(
-            title,
-            path_label,
-            error_axes,
-            integrated_jerk_axes,
-            rcm_axes,
-            error_graph,
-            integrated_jerk_graph,
-            rcm_graph,
-            error_label,
-            integrated_jerk_label,
-            rcm_label,
-            metric,
-            error_dot,
-            integrated_jerk_dot,
-            rcm_dot,
+        second_difference_dot = mn.always_redraw(
+            lambda: mn.Dot(
+                second_difference_axes.c2p(
+                    second_difference_time[
+                        self._index(tracker.get_value() - 2 * DT, DT, len(second_difference_norm))
+                    ],
+                    second_difference_norm[
+                        self._index(tracker.get_value() - 2 * DT, DT, len(second_difference_norm))
+                    ],
+                ),
+                color=mn.YELLOW,
+                radius=0.055,
+            )
         )
+
         self.play(
+            mn.FadeIn(
+                title,
+                path_label,
+                error_label,
+                integrated_jerk_label,
+                rcm_label,
+                second_difference_label,
+                goal_dot,
+                metric,
+            ),
             mn.Create(path_axes),
+            mn.Create(error_axes),
+            mn.Create(integrated_jerk_axes),
+            mn.Create(rcm_axes),
+            mn.Create(second_difference_axes),
             mn.Create(path),
-            mn.FadeIn(goal_dot, high_jerk_dots, tip_dot),
+            mn.Create(error_graph),
+            mn.Create(integrated_jerk_graph),
+            mn.Create(rcm_graph),
+            mn.Create(second_difference_graph),
+            mn.FadeIn(high_jerk_dots, tip_dot, error_dot, integrated_jerk_dot, rcm_dot, second_difference_dot),
             run_time=1.2,
         )
         self.play(tracker.animate.set_value(duration), run_time=8.0, rate_func=mn.linear)

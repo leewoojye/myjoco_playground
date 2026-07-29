@@ -47,7 +47,7 @@ class LFMPPIPlanner:
                 ldj_cost = -ldj_weight * log_dimensionless_jerk(torch.stack(rollout_positions, dim=-2), dt)
             return (
                 2000.0 * position_error.square().sum(dim=-1)
-                + ldj_cost
+                + ldj_cost * 0  # cost/metric으로서 LDLJ의 차이
                 + 0.01
                 * (
                     10.0 * (control[..., :3] / control_limit[:3]).square().sum(dim=-1)
@@ -58,20 +58,19 @@ class LFMPPIPlanner:
         # I2RIS 기준 terminal cost: T-1 timestep에서 비용
         # 단, T-1 timestep에서 비용은 우회 궤적을 선호할 수도 있을 우려
         def terminal_cost(states, actions):
-            # control_delta = torch.diff(actions, dim=-2) / control_limit
-            # smoothness_cost = control_delta.square().sum(dim=(-2, -1))
+            control_delta = torch.diff(actions, dim=-2) / control_limit
+            smoothness_cost = control_delta.square().sum(dim=(-2, -1))
 
             control_second_difference = torch.diff(actions, n=2, dim=-2) / control_limit
             second_difference_cost = control_second_difference.square().sum(dim=(-2, -1))
-            boundary_cost = torch.zeros_like(second_difference_cost)
-            if self.previous_control is not None:
-                boundary_delta = (actions[..., 0, :] - self.previous_control) / control_limit
-                boundary_cost = boundary_delta.square().sum(dim=-1)
+            # boundary_cost = torch.zeros_like(second_difference_cost)
+            # if self.previous_control is not None:
+            #     boundary_delta = (actions[..., 0, :] - self.previous_control) / control_limit
+            #     boundary_cost = boundary_delta.square().sum(dim=-1)
             # 비용항 가중치 동적 조절?
             return (
-                4.0 * running_cost(states[..., -1, :], actions[..., -1, :], 0)
-                + 1.0 * second_difference_cost
-                + 1.0 * boundary_cost
+                10.0 * running_cost(states[..., -1, :], actions[..., -1, :], 0) + 0.1 * smoothness_cost
+                # + 0.1 * second_difference_cost
             )  # second_difference_cost
 
         self.mppi = LowFrequencyMPPI(

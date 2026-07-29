@@ -48,24 +48,14 @@ class LowFrequencyMPPI(MPPI):
         return noise + self.noise_mu
 
 
-def log_dimensionless_jerk(positions, dt):
-    velocity = torch.diff(positions, dim=-2) / dt
-    jerk = torch.diff(velocity, n=2, dim=-2) / dt**2
-    duration = (positions.shape[-2] - 1) * dt
-    peak_speed_sq = torch.linalg.vector_norm(velocity, dim=-1).amax(dim=-1).square()
-    squared_jerk = jerk.square().sum(dim=(-2, -1)) * dt
-    dimensionless_jerk = duration**5 * squared_jerk / peak_speed_sq.clamp_min(torch.finfo(positions.dtype).eps)
-    return -torch.log(dimensionless_jerk.clamp_min(torch.finfo(positions.dtype).eps))
-
-
 class dVRKMPPIPlanner:
     DIM = 7
 
     def __init__(
         self,
         dynamics,
-        num_samples=512,
-        horizon=20,
+        num_samples=20,
+        horizon=8,
         ldj_weight=1.0,
         dt=0.02,
         mppi_class=MPPI,
@@ -96,21 +86,18 @@ class dVRKMPPIPlanner:
 
         def running_cost(state, control, t):
             position_error = state[..., :3] - self.goal[:3]
-            ldj_cost = 0.0
-            if ldj_weight and t == horizon - 1:
-                ldj_cost = -ldj_weight * log_dimensionless_jerk(torch.stack(rollout_positions, dim=-2), dt)
-            return (
-                2000.0 * position_error.square().sum(dim=-1)
-                + ldj_cost
-                + 0.01
-                * (
-                    4.0 * (control[..., :3] / control_limit[:3]).square().sum(dim=-1)
-                    + (control[..., 3:] / control_limit[3:]).square().sum(dim=-1)
-                )
+            return 2000.0 * position_error.square().sum(dim=-1) + 0.1 * (
+                4.0 * (control[..., :3] / control_limit[:3]).square().sum(dim=-1)
+                + (control[..., 3:] / control_limit[3:]).square().sum(dim=-1)
             )
 
         def terminal_cost(states, actions):
-            return 10.0 * running_cost(states[..., -1, :], actions[..., -1, :], 0)
+            smoothness_cost = (torch.diff(actions, dim=-2) / control_limit).square().sum(dim=(-2, -1))
+            second_difference_cost = (torch.diff(actions, n=2, dim=-2) / control_limit).square().sum(dim=(-2, -1))
+            return (
+                10.0 * running_cost(states[..., -1, :], actions[..., -1, :], 0) + smoothness_cost * 0.1
+                # + second_difference_cost * 0.1
+            )
 
         # def terminal_cost(states, actions):
         #     final_state = states[..., -1, :]
@@ -125,8 +112,8 @@ class dVRKMPPIPlanner:
             noise_sigma=torch.diag((0.5 * control_limit).square()),
             num_samples=num_samples,
             horizon=horizon,
-            # lambda_=1.0,
-            lambda_=0.01,
+            lambda_=0.1,
+            # lambda_=0.01,
             u_min=-control_limit,
             u_max=control_limit,
             step_dependent_dynamics=True,
