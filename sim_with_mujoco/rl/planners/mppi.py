@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from pytorch_mppi import MPPI
+from pytorch_mppi import MPPI, SMPPI
 
 
 class LowFrequencyMPPI(MPPI):
@@ -48,13 +48,36 @@ class LowFrequencyMPPI(MPPI):
         return noise + self.noise_mu
 
 
+class DvrkSMPPI(SMPPI):
+    def __init__(self, *args, action_cost_weight, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.action_cost_weight = torch.as_tensor(
+            action_cost_weight,
+            dtype=self.dtype,
+            device=self.d,
+        )
+
+    def _compute_total_cost_batch(self):
+        self._compute_perturbed_action_and_noise()
+        action_cost = self._compute_action_cost(self.noise)
+        action_difference = self.u_scale * torch.diff(self.perturbed_action, dim=-2)
+        action_smoothness_cost = (action_difference.square() * self.action_cost_weight).sum(dim=(1, 2))
+
+        rollout_cost, self.states, actions = self._compute_rollout_costs(self.perturbed_action)
+        self.actions = actions / self.u_scale if actions is not None else None
+        perturbation_cost = torch.sum(self.U * action_cost, dim=(1, 2))
+        self.cost_total = rollout_cost + perturbation_cost + action_smoothness_cost
+        return self.cost_total
+
+
 class dVRKMPPIPlanner:
     DIM = 7
+    CONTROL_LIMIT = (0.004, 0.004, 0.004, 0.06, 0.06, 0.06, 0.05)
 
     def __init__(
         self,
         dynamics,
-        num_samples=20,
+        num_samples=512,
         horizon=8,
         ldj_weight=1.0,
         dt=0.02,
@@ -68,10 +91,11 @@ class dVRKMPPIPlanner:
             device=dynamics.centers.device,
         )
         control_limit = torch.tensor(
-            [0.004, 0.004, 0.004, 0.06, 0.06, 0.06, 0.05],
+            self.CONTROL_LIMIT,
             dtype=self.goal.dtype,
             device=self.goal.device,
         )
+        use_smppi = mppi_class is DvrkSMPPI
         rollout_positions = []
 
         def rollout_dynamics(state, control, t):
@@ -86,38 +110,49 @@ class dVRKMPPIPlanner:
 
         def running_cost(state, control, t):
             position_error = state[..., :3] - self.goal[:3]
-            return 2000.0 * position_error.square().sum(dim=-1) + 0.1 * (
+            state_cost = 2000.0 * position_error.square().sum(dim=-1)
+            if use_smppi:
+                return state_cost
+            return state_cost + 0.1 * (
                 4.0 * (control[..., :3] / control_limit[:3]).square().sum(dim=-1)
                 + (control[..., 3:] / control_limit[3:]).square().sum(dim=-1)
             )
 
         def terminal_cost(states, actions):
+            terminal = 10.0 * running_cost(states[..., -1, :], actions[..., -1, :], 0)
+            if use_smppi:
+                return terminal
             smoothness_cost = (torch.diff(actions, dim=-2) / control_limit).square().sum(dim=(-2, -1))
-            second_difference_cost = (torch.diff(actions, n=2, dim=-2) / control_limit).square().sum(dim=(-2, -1))
+            second_difference_cost = (
+                (  # noqa: F841
+                    torch.diff(actions, n=2, dim=-2) / control_limit
+                )
+                .square()
+                .sum(dim=(-2, -1))
+            )
             return (
-                10.0 * running_cost(states[..., -1, :], actions[..., -1, :], 0) + smoothness_cost * 0.1
+                terminal
+                # + smoothness_cost * 0.1
                 # + second_difference_cost * 0.1
             )
 
-        # def terminal_cost(states, actions):
-        #     final_state = states[..., -1, :]
-        #     position_error = final_state[..., :3] - self.goal[:3]
-        #     return 17.0 * 2000.0 * position_error.square().sum(dim=-1)
-
+        mppi_config = {
+            "noise_sigma": torch.diag((0.5 * control_limit).square()),
+            "u_min": -control_limit,
+            "u_max": control_limit,
+        }
+        mppi_config.update(mppi_kwargs or {})
         self.mppi = mppi_class(
             dynamics=rollout_dynamics,
             running_cost=running_cost,
             terminal_state_cost=terminal_cost,
             nx=self.DIM,
-            noise_sigma=torch.diag((0.5 * control_limit).square()),
             num_samples=num_samples,
             horizon=horizon,
-            lambda_=0.1,
-            # lambda_=0.01,
-            u_min=-control_limit,
-            u_max=control_limit,
+            # lambda_=0.1,
+            lambda_=0.01,
             step_dependent_dynamics=True,
-            **(mppi_kwargs or {}),
+            **mppi_config,
         )
 
     def set_goal(self, goal):
@@ -138,5 +173,26 @@ class LFMPPIPlanner(dVRKMPPIPlanner):
             *args,
             mppi_class=LowFrequencyMPPI,
             mppi_kwargs={"gamma": gamma},
+            **kwargs,
+        )
+
+
+class SMPPIDVRKPlanner(dVRKMPPIPlanner):
+    def __init__(self, *args, action_cost_weight=0.1, dt=0.02, **kwargs):
+        control_limit = torch.tensor(self.CONTROL_LIMIT)
+        rate_limit = control_limit / dt
+        super().__init__(
+            *args,
+            dt=dt,
+            mppi_class=DvrkSMPPI,
+            mppi_kwargs={
+                "noise_sigma": torch.diag((0.5 * rate_limit).square()),
+                "u_min": -rate_limit,
+                "u_max": rate_limit,
+                "delta_t": dt,
+                "action_min": -control_limit,
+                "action_max": control_limit,
+                "action_cost_weight": action_cost_weight / control_limit.square(),
+            },
             **kwargs,
         )

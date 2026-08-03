@@ -8,7 +8,7 @@ from scipy.spatial.transform import Rotation
 
 from sim_with_mujoco.environment.dvrk_needle_reach_env import DvrkNeedleReachEnv
 from sim_with_mujoco.rl.models.dynamics_dvrk import KinematicDynamics
-from sim_with_mujoco.rl.planners.mppi import dVRKMPPIPlanner
+from sim_with_mujoco.rl.planners.mppi import SMPPIDVRKPlanner
 from sim_with_mujoco.utils.dvrk_ik import get_site_transform, solve_rcm_ik
 from sim_with_mujoco.utils.math3d import get_body_T
 from sim_with_mujoco.viewer.surrol_keyboard_viewer import SurrolKeyboardViewer
@@ -42,7 +42,7 @@ def main():
     goal[:3] = target_position
 
     dynamics = KinematicDynamics()
-    planner = dVRKMPPIPlanner(dynamics)
+    planner = SMPPIDVRKPlanner(dynamics)
     planner.set_goal(goal)
     trace = []
 
@@ -61,8 +61,8 @@ def main():
                 break
 
             state, world_T_ecm, ecm_T_tip = get_state(env, ecm_id, jaw_qpos_id)
-            nominal_before = torch.roll(planner.mppi.U.detach().cpu().clone(), -1, dims=0)
-            nominal_before[-1] = planner.mppi.u_init.detach().cpu()
+            nominal_before = torch.roll(planner.mppi.action_sequence.detach().cpu().clone(), -1, dims=0)
+            nominal_before[-1] = planner.mppi.action_sequence[-1].detach().cpu()
             action = planner.command(state)
             mppi = planner.mppi
             candidate_states = torch.cat(
@@ -79,7 +79,7 @@ def main():
                 "rollout_cost": mppi.cost_total.detach().cpu().clone(),
                 "rollout_weight": mppi.omega.detach().cpu().clone(),
                 "nominal_before": nominal_before,
-                "nominal_after": mppi.U.detach().cpu().clone(),
+                "nominal_after": mppi.action_sequence.detach().cpu().clone(),
             }
             target_T_ecm = ecm_T_tip.copy()
             target_T_ecm[:3, 3] = action[:3]
