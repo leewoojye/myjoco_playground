@@ -7,7 +7,7 @@ import torch
 from scipy.spatial.transform import Rotation
 
 from sim_with_mujoco.environment.dvrk_needle_reach_env import DvrkNeedleReachEnv
-from sim_with_mujoco.rl.models.dynamics_dvrk import RBFEKFDynamics
+from sim_with_mujoco.rl.models.dynamics_dvrk import KinematicDynamics
 from sim_with_mujoco.rl.planners.mppi import dVRKMPPIPlanner
 from sim_with_mujoco.utils.dvrk_ik import get_site_transform, solve_rcm_ik
 from sim_with_mujoco.utils.math3d import get_body_T
@@ -16,9 +16,6 @@ from sim_with_mujoco.viewer.surrol_keyboard_viewer import SurrolKeyboardViewer
 ROOT_DIR = Path(__file__).resolve().parents[2]
 XML_PATH = ROOT_DIR / "assets" / "robots" / "dvrk" / "scene_psm_surrol_needle_reach_offset.xml"
 TRACE_PATH = ROOT_DIR / "temp" / "dvrk_mppi_demo4_trace.pt"
-RBF_PARAMS_PATH = ROOT_DIR / "temp" / "aa_mppi" / "rbf_basis_lowfreq_experimental.npz"
-
-
 def get_state(env, ecm_id, jaw_qpos_id):
     world_T_ecm = get_body_T(env.data, ecm_id)
     ecm_T_tip = np.linalg.inv(world_T_ecm) @ get_site_transform(env.data, env.tip_site_id)
@@ -44,10 +41,7 @@ def main():
     goal = state.copy()
     goal[:3] = target_position
 
-    with np.load(RBF_PARAMS_PATH) as parameters:
-        centers = parameters["centers"]
-        widths = parameters["widths"]
-    dynamics = RBFEKFDynamics(centers, widths, weights=np.ones(centers.shape[:2], dtype=np.float32))
+    dynamics = KinematicDynamics()
     planner = dVRKMPPIPlanner(dynamics)
     planner.set_goal(goal)
     trace = []
@@ -111,17 +105,9 @@ def main():
             env.plant.step(env.control_steps)
 
             next_state, _, _ = get_state(env, ecm_id, jaw_qpos_id)
-            pose_weights_before = dynamics.pose_weights.detach().cpu().clone()
-            jaw_weights_before = dynamics.jaw_weights.detach().cpu().clone()
-            ekf_trace = dynamics.update(state, action, next_state)
             step_trace.update({
                 "rbf_action": torch.from_numpy(action.copy()),
                 "next_state": torch.from_numpy(next_state.copy()),
-                "pose_weights_before": pose_weights_before,
-                "pose_weights_after": dynamics.pose_weights.detach().cpu().clone(),
-                "jaw_weights_before": jaw_weights_before,
-                "jaw_weights_after": dynamics.jaw_weights.detach().cpu().clone(),
-                **ekf_trace,
             })
             trace.append(step_trace)
             tip_error = np.linalg.norm(goal[:3] - next_state[:3])

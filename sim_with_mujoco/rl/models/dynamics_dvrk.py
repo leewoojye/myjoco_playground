@@ -36,6 +36,18 @@ def init_rbf(states, actions, num_basis=20):
     return centers, widths
 
 
+class KinematicDynamics(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # dVRKMPPIPlanner uses this buffer to select rollout dtype and device.
+        self.register_buffer("centers", torch.empty(0))
+
+    def forward(self, state, action):
+        state = torch.as_tensor(state, dtype=self.centers.dtype, device=self.centers.device)
+        action = torch.as_tensor(action, dtype=self.centers.dtype, device=self.centers.device)
+        return torch.cat((action[..., :3], state[..., 3:] + action[..., 3:]), dim=-1)
+
+
 class RBFEKFDynamics(nn.Module):
     DIM = 7
     POSE_DIM = 6
