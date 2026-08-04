@@ -27,28 +27,13 @@ XML_PATH = ROOT_DIR / "assets" / "robots" / "dvrk" / "scene_psm_surrol_needle_re
 TRACE_PATH = ROOT_DIR / "temp" / "dvrk_scp_mppi_trace.pt"
 INITIAL_CAMERA = (180, -20, 0.55)
 
-# The paper's numerical weights are tied to its catheter model, tendon units,
-# and horizon.  These values keep the same cost structure while preserving the
-# scale of this dVRK demo.  They are intentionally explicit for later tuning.
-ERROR_STATE_COST = {
-    "orientation_weight": 100.0,
-    "position_weight": 2000.0,
-    "velocity_weight": 1.0,
-    "control_weight": 0.01,
-    "terminal_orientation_weight": 1000.0,
-    "terminal_position_weight": 20000.0,
-}
-
 
 def get_state(env, ecm_id, jaw_qpos_id):
     world_T_ecm = get_body_T(env.data, ecm_id)
     ecm_T_tip = np.linalg.inv(world_T_ecm) @ get_site_transform(env.data, env.tip_site_id)
     state = np.r_[
         ecm_T_tip[:3, 3],
-        # Store the actual tip orientation R_ECM_TIP.  The previous transpose
-        # represented its inverse and was incompatible with the body-increment
-        # update R_next = R_current Exp(delta_r^).
-        Rotation.from_matrix(ecm_T_tip[:3, :3]).as_rotvec(),
+        Rotation.from_matrix(ecm_T_tip[:3, :3].T).as_rotvec(),
         env.data.qpos[jaw_qpos_id],
     ].astype(np.float32)
     return state, world_T_ecm, ecm_T_tip
@@ -118,12 +103,6 @@ def parse_args():
         default=900,
         help="Video height in pixels for --record (default: 900).",
     )
-    parser.add_argument(
-        "--orientation-tolerance-deg",
-        type=float,
-        default=2.0,
-        help="Pose-goal orientation tolerance in degrees (default: 2.0).",
-    )
     args = parser.parse_args()
     if args.record is not None and not args.headless:
         parser.error("--record requires --headless")
@@ -131,8 +110,6 @@ def parse_args():
         parser.error("--video-fps, --render-width, and --render-height must be positive")
     if args.seed < 0:
         parser.error("--seed must be non-negative")
-    if args.orientation_tolerance_deg <= 0.0:
-        parser.error("--orientation-tolerance-deg must be positive")
     return args
 
 
@@ -212,8 +189,6 @@ def main():
     ecm_T_world = np.linalg.inv(world_T_ecm)
     goal = state.copy()
     goal[:3] = (ecm_T_world @ np.r_[env.data.site_xpos[env.target_site_id], 1.0])[:3]
-    # The target site supplies only position.  Pose control therefore holds the
-    # initial tip orientation as the desired orientation.
     rcm_position = (ecm_T_world @ np.r_[env.rcm_pos, 1.0])[:3]
 
     planner = DvrkSCPSMPPIPlanner(
@@ -223,10 +198,8 @@ def main():
         horizon=8,
         num_control_points=4,
         svgd_iterations=0,
-        lambda_=0.3,
+        lambda_=0.1,  # 가중합을 하고 난 뒤 SVGD를 수행해 가중합 결과에 덜 민감함
         action_smoothness_weight=3.0,
-        use_se3_kinematic_rollout=True,
-        **ERROR_STATE_COST,
     )
     planner.set_goal(goal)
     trace = []
@@ -234,8 +207,6 @@ def main():
     physics_tip_position = [env.data.site_xpos[env.tip_site_id].copy()]
     print(f"SCP-SMPPI rollout device: {device}")
     print(f"SCP-SMPPI random seed: {args.seed}")
-    print("Pose cost: SE(3) error [omega, chi] + finite-difference body-twist error")
-    print(f"Error-state weights: {ERROR_STATE_COST}")
 
     viewer = None
     qpos_trajectory = [] if args.record is not None else None
@@ -246,16 +217,11 @@ def main():
     else:
         viewer = SurrolKeyboardViewer(env.model, env.data)
         viewer.init_viewer(
-            window_title="dVRK SCP-SMPPI ERROR-STATE DEMO",
+            window_title="dVRK SCP-SMPPI DEMO",
             initial_camera=INITIAL_CAMERA,
             focus_position=env.data.site_xpos[env.target_site_id],
         )
-
-    orientation_tolerance = np.deg2rad(args.orientation_tolerance_deg)
     tip_error = np.linalg.norm(goal[:3] - state[:3])
-    pose_error = planner.pose_error(state).detach().cpu().numpy()
-    lie_position_error = np.linalg.norm(pose_error[3:6])
-    orientation_error = np.linalg.norm(pose_error[:3])
 
     try:
         for step in range(env.max_steps):
@@ -272,9 +238,6 @@ def main():
             step_trace = {
                 "state": torch.from_numpy(state.copy()),
                 "rollout_position": planner.candidate_states[..., :3].detach().cpu().clone(),
-                "rollout_pose_error": planner.candidate_pose_errors.detach().cpu().clone(),
-                "rollout_velocity_error": planner.candidate_velocity_errors.detach().cpu().clone(),
-                "rollout_cost_components": planner.candidate_cost_components.detach().cpu().clone(),
                 "rollout_cost": planner.candidate_costs.detach().cpu().clone(),
                 "rollout_weight": planner.candidate_weights.detach().cpu().clone(),
                 "nominal_after": planner.nominal_action_sequence.detach().cpu().clone(),
@@ -311,17 +274,12 @@ def main():
                 physics_tip_position.append(env.data.site_xpos[env.tip_site_id].copy())
 
             next_state, next_world_T_ecm, _ = get_state(env, ecm_id, jaw_qpos_id)
-            next_pose_error = planner.pose_error(next_state).detach().cpu().numpy()
             step_trace.update({
                 "action": torch.from_numpy(action.copy()),
                 "next_state": torch.from_numpy(next_state.copy()),
-                "next_pose_error": torch.from_numpy(next_pose_error.copy()),
             })
             trace.append(step_trace)
-
             tip_error = np.linalg.norm(goal[:3] - next_state[:3])
-            orientation_error = np.linalg.norm(next_pose_error[:3])
-            lie_position_error = np.linalg.norm(next_pose_error[3:6])
             next_ecm_T_world = np.linalg.inv(next_world_T_ecm)
             wrist_position = (next_ecm_T_world @ np.r_[env.data.xpos[wrist_id], 1.0])[:3]
             shaft_direction = next_ecm_T_world[:3, :3] @ env.data.xmat[wrist_id].reshape(3, 3)[:, 2]
@@ -331,9 +289,7 @@ def main():
             )
             if viewer is not None:
                 viewer.set_overlay([
-                    f"Tip Euclidean error: {tip_error * 1000.0:5.1f} mm",
-                    f"SE(3) chi error: {lie_position_error * 1000.0:5.1f} mm",
-                    f"Orientation error: {np.rad2deg(orientation_error):5.2f} deg",
+                    f"Tip error: {tip_error * 1000.0:5.1f} mm",
                     f"RCM error: {rcm_error * 1000.0:4.1f} mm",
                     f"Feasible samples: {feasible * 100.0:4.0f}%",
                 ])
@@ -342,11 +298,9 @@ def main():
                 qpos_trajectory.append(env.data.qpos.copy())
             print(
                 f"step={step:03d} tip_error={tip_error * 1000.0:6.2f} mm "
-                f"chi_error={lie_position_error * 1000.0:6.2f} mm "
-                f"orientation_error={np.rad2deg(orientation_error):6.3f} deg "
                 f"rcm_error={rcm_error * 1000.0:5.2f} mm feasible={feasible:4.2f}"
             )
-            if tip_error <= env.tolerance and orientation_error <= orientation_tolerance:
+            if tip_error <= env.tolerance:
                 break
     finally:
         if viewer is not None:
@@ -355,15 +309,8 @@ def main():
         torch.save(
             {
                 "goal": torch.from_numpy(goal.copy()),
-                "state_layout": "[position_ECM(3), rotvec(R_ECM_TIP)(3), jaw(1)]",
-                "pose_error_layout": "[omega, chi] from Log(goal_pose^-1 current_pose)",
-                "velocity_error_layout": "[omega_e, J_left(omega_pose)^-1 v_e] with zero desired twist",
-                "cost_component_names": DvrkSCPSMPPIPlanner.COST_COMPONENT_NAMES,
-                "cost_weights": ERROR_STATE_COST,
-                "uncertainty_term": "disabled; no EWMA term",
                 "position_action": "absolute_ecm",
-                "rotation_action": "body_increment_rotvec",
-                "planner": "scp_smppi_se3_error_state_cost",
+                "planner": "scp_smppi",
                 "seed": args.seed,
                 "steps": trace,
                 "physics_tip_time": torch.as_tensor(physics_tip_time, dtype=torch.float64),
@@ -378,9 +325,7 @@ def main():
         print(f"SCP-SMPPI finished; rendering {len(qpos_trajectory)} recorded frame(s) with OSMesa.")
         render_headless_video(args, qpos_trajectory)
         print(f"Saved {len(qpos_trajectory)} frame(s) to: {args.record}")
-
-    pose_success = tip_error <= env.tolerance and orientation_error <= orientation_tolerance
-    print("success" if pose_success else "failed")
+    print("success" if tip_error <= env.tolerance else "failed")
 
 
 if __name__ == "__main__":
