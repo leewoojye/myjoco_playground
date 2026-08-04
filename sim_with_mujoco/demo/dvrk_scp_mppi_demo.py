@@ -7,7 +7,7 @@ from scipy.spatial.transform import Rotation
 
 from sim_with_mujoco.environment.dvrk_needle_reach_env import DvrkNeedleReachEnv
 from sim_with_mujoco.rl.models.dynamics_dvrk import KinematicDynamics
-from sim_with_mujoco.rl.planners.scp_mppi import DvrkSCPMPPIPlanner
+from sim_with_mujoco.rl.planners.csvto_mppi import DvrkCSVTOPlanner
 from sim_with_mujoco.utils.dvrk_ik import get_site_transform, solve_rcm_ik
 from sim_with_mujoco.utils.math3d import get_body_T
 from sim_with_mujoco.viewer.surrol_keyboard_viewer import SurrolKeyboardViewer
@@ -71,10 +71,10 @@ def main():
     goal[:3] = (ecm_T_world @ np.r_[env.data.site_xpos[env.target_site_id], 1.0])[:3]
     rcm_position = (ecm_T_world @ np.r_[env.rcm_pos, 1.0])[:3]
 
-    planner = DvrkSCPMPPIPlanner(
+    planner = DvrkCSVTOPlanner(
         KinematicDynamics(),
         rcm_position,
-        num_samples=64,
+        num_samples=128,
         horizon=24,
         num_control_points=4,
         svgd_iterations=3,
@@ -83,7 +83,7 @@ def main():
 
     viewer = SurrolKeyboardViewer(env.model, env.data)
     viewer.init_viewer(
-        window_title="dVRK SCP-MPPI DEMO",
+        window_title="dVRK CSVTO-MPPI DEMO",
         initial_camera=(180, -20, 0.55),
         focus_position=env.data.site_xpos[env.target_site_id],
     )

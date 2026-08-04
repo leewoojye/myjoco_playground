@@ -3,9 +3,10 @@ import math
 import numpy as np
 import torch
 from scipy.interpolate import CubicSpline
+from torch.func import jacrev, vmap
 
 
-class DvrkSCPMPPIPlanner:
+class DvrkCSVTOPlanner:
     DIM = 7
     CONTROL_LIMIT = (0.004, 0.004, 0.004, 0.06, 0.06, 0.06, 0.05)
 
@@ -18,18 +19,18 @@ class DvrkSCPMPPIPlanner:
         num_control_points=4,
         svgd_iterations=3,
         svgd_step_size=0.05,
+        constraint_step_size=1.0,
         lambda_=0.01,
         rcm_tolerance=0.002,
-        rcm_weight=10.0,
     ):
         self.dynamics = dynamics
         self.num_samples = num_samples
         self.horizon = horizon
         self.svgd_iterations = svgd_iterations
         self.svgd_step_size = svgd_step_size
+        self.constraint_step_size = constraint_step_size
         self.lambda_ = lambda_
         self.rcm_tolerance = rcm_tolerance
-        self.rcm_weight = rcm_weight
 
         dtype = dynamics.centers.dtype
         device = dynamics.centers.device
@@ -91,7 +92,16 @@ class DvrkSCPMPPIPlanner:
             beta = costs.min().detach()
             log_likelihood = -torch.log(costs - beta + 1000.0)
             score = torch.autograd.grad(log_likelihood.sum(), particles)[0]
-            particles = (particles + self.svgd_step_size * self._stein_direction(particles, score)).detach()
+
+            particles = particles.detach()
+            projection, correction = self._constraint_geometry(particles)
+            stein = self._stein_direction(particles, score.detach()).reshape(self.num_samples, -1)
+            tangent_stein = torch.einsum("kij,kj->ki", projection, stein).reshape_as(particles)
+            particles = (
+                particles
+                + self.svgd_step_size * tangent_stein
+                + self.constraint_step_size * correction.reshape_as(particles)
+            )
 
         with torch.no_grad():
             sparse_controls = self._sparse_controls(particles)
@@ -102,6 +112,11 @@ class DvrkSCPMPPIPlanner:
             self.control_points.add_(torch.einsum("k,kmd->md", weights, perturbations))
             self.control_points.clamp_(-self.control_limit, self.control_limit)
 
+        _, correction = self._constraint_geometry(torch.zeros_like(particles[:1]))
+        with torch.no_grad():
+            correction = correction[0].reshape_as(self.control_points)
+            self.control_points.add_(self.constraint_step_size * correction * self.noise_std)
+            self.control_points.clamp_(-self.control_limit, self.control_limit)
             optimal_controls = self._interpolate(self.control_points).clamp(
                 -self.control_limit,
                 self.control_limit,
@@ -129,8 +144,10 @@ class DvrkSCPMPPIPlanner:
         )
 
     def _candidate_controls(self, particles):
-        sparse_controls = self._sparse_controls(particles)
-        return self._interpolate(sparse_controls).clamp(-self.control_limit, self.control_limit)
+        return self._interpolate(self._sparse_controls(particles)).clamp(
+            -self.control_limit,
+            self.control_limit,
+        )
 
     def _sparse_controls(self, particles):
         return (self.control_points + particles * self.noise_std).clamp(
@@ -156,15 +173,34 @@ class DvrkSCPMPPIPlanner:
         goal_cost = 2000.0 * position_error.square().sum(dim=(-2, -1))
         terminal_cost = 20000.0 * position_error[:, -1].square().sum(dim=-1)
         control_cost = 0.01 * (controls / self.control_limit).square().sum(dim=(-2, -1))
-        rcm_deviation = self._rollout_rcm_deviation(controls)
-        rcm_cost = self.rcm_weight * (rcm_deviation / self.rcm_tolerance).square().sum(dim=-1)
-        # return states, goal_cost + terminal_cost + control_cost, rcm_deviation
-        return states, goal_cost + terminal_cost + control_cost + rcm_cost, rcm_deviation
+        rcm_deviation = torch.linalg.vector_norm(self._rollout_rcm_residual(controls), dim=-1)
+        return states, goal_cost + terminal_cost + control_cost, rcm_deviation
 
-    def _rollout_rcm_deviation(self, controls):
+    def _constraint_geometry(self, particles):
+        def residual_with_aux(particle):
+            residual = self._particle_rcm_residual(particle)
+            return residual, residual
+
+        jacobian, residual = vmap(jacrev(residual_with_aux, has_aux=True))(particles)
+        jacobian = jacobian.reshape(particles.shape[0], -1, particles[0].numel())
+        residual = residual.reshape(particles.shape[0], -1)
+        inverse = torch.linalg.pinv(jacobian)
+        eye = torch.eye(jacobian.shape[-1], dtype=particles.dtype, device=particles.device)
+        projection = eye - inverse @ jacobian
+        correction = -torch.einsum("kij,kj->ki", inverse, residual)
+        return projection.detach(), correction.detach()
+
+    def _particle_rcm_residual(self, particle):
+        controls = self._interpolate(self._sparse_controls(particle)).clamp(
+            -self.control_limit,
+            self.control_limit,
+        )
+        return self._rollout_rcm_residual(controls.unsqueeze(0))[0]
+
+    def _rollout_rcm_residual(self, controls):
         wrist_position = self.wrist_position.expand(controls.shape[0], -1)
         shaft_direction = self.shaft_direction.expand(controls.shape[0], -1)
-        deviations = []
+        residuals = []
 
         for time in range(self.horizon):
             body_rotation = controls[:, time, 3:6]
@@ -172,13 +208,20 @@ class DvrkSCPMPPIPlanner:
             tip_displacement = torch.cat((controls[:, time, :3], angular_displacement), dim=-1)
             joint_displacement = torch.einsum("ij,kj->ki", self.tip_jacobian_inverse, tip_displacement)
             wrist_position = wrist_position + torch.einsum(
-                "ij,kj->ki", self.wrist_position_jacobian, joint_displacement
+                "ij,kj->ki",
+                self.wrist_position_jacobian,
+                joint_displacement,
             )
             wrist_rotation = torch.einsum("ij,kj->ki", self.wrist_rotation_jacobian, joint_displacement)
-            shaft_direction = torch.einsum("kij,kj->ki", self._rotation_matrix(wrist_rotation), shaft_direction)
-            deviations.append(self.rcm_deviation(wrist_position, shaft_direction))
+            shaft_direction = torch.einsum(
+                "kij,kj->ki",
+                self._rotation_matrix(wrist_rotation),
+                shaft_direction,
+            )
+            offset = self.rcm_position - wrist_position
+            residuals.append(offset - (offset * shaft_direction).sum(dim=-1, keepdim=True) * shaft_direction)
 
-        return torch.stack(deviations, dim=1)
+        return torch.stack(residuals, dim=1)
 
     def _stein_direction(self, particles, score):
         flat_particles = particles.reshape(self.num_samples, -1)
