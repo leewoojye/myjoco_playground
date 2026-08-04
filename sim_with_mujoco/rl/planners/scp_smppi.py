@@ -1,4 +1,4 @@
-"""SCP-MPPI with an RCM inequality projection applied only during SVGD."""
+"""SCP-SMPPI with derivative controls, action integration, and RCM-projected SVGD."""
 
 import math
 
@@ -8,14 +8,15 @@ from scipy.interpolate import CubicSpline
 from torch.func import jacrev, vmap
 
 
-class DvrkConstrainedSCPMPPIPlanner:
-    """SCP-MPPI with CSVTO-style RCM projection in its SVGD update.
+class DvrkSCPSMPPIPlanner:
+    """Sparse-control-point SMPPI with the existing RCM SVGD projection.
 
-    The MPPI objective and weighted control-point update are unchanged from
-    :class:`DvrkSCPMPPIPlanner`.  The RCM constraint is not added as a cost and
-    does not post-process the nominal control points.  It only constrains the
-    SVGD particle transport when a predicted shaft trajectory leaves the RCM
-    tolerance ball.
+    Particles parameterize sparse derivative controls ``U``.  Cubic spline
+    interpolation creates a derivative sequence, which is integrated over one
+    MPC update into the persistent action sequence ``A``.  The existing
+    position/control costs are retained, and ``Omega(A)`` penalizes action
+    variation along the prediction horizon.  RCM projection is applied only
+    to the SVGD transport of the sparse ``U`` particles.
     """
 
     DIM = 7
@@ -33,7 +34,12 @@ class DvrkConstrainedSCPMPPIPlanner:
         constraint_step_size=1.0,
         lambda_=0.01,
         rcm_tolerance=0.015,
+        dt=0.02,
+        action_smoothness_weight=0.1,
     ):
+        if dt <= 0.0:
+            raise ValueError("dt must be positive")
+
         self.dynamics = dynamics
         self.num_samples = num_samples
         self.horizon = horizon
@@ -42,26 +48,38 @@ class DvrkConstrainedSCPMPPIPlanner:
         self.constraint_step_size = constraint_step_size
         self.lambda_ = lambda_
         self.rcm_tolerance = rcm_tolerance
+        self.dt = dt
+        self.action_smoothness_weight = action_smoothness_weight
 
         dtype = dynamics.centers.dtype
         device = dynamics.centers.device
         self.goal = torch.zeros(self.DIM, dtype=dtype, device=device)
         self.rcm_position = torch.as_tensor(rcm_position, dtype=dtype, device=device)
         self.control_limit = torch.tensor(self.CONTROL_LIMIT, dtype=dtype, device=device)
-        self.noise_std = 0.5 * self.control_limit
+        self.rate_limit = self.control_limit / dt
+        self.rate_noise_std = 0.5 * self.rate_limit
 
         support_indices = np.linspace(0, horizon - 1, num_control_points).round().astype(int)
         spline = CubicSpline(support_indices, np.eye(num_control_points), axis=0)
         spline_basis = spline(np.arange(horizon)).astype(np.float32)
         self.support_indices = torch.as_tensor(support_indices, dtype=torch.long, device=device)
         self.spline_basis = torch.as_tensor(spline_basis, dtype=dtype, device=device)
-        self.control_points = torch.zeros(num_control_points, self.DIM, dtype=dtype, device=device)
+        self.derivative_control_points = torch.zeros(
+            num_control_points,
+            self.DIM,
+            dtype=dtype,
+            device=device,
+        )
+        self.action_sequence = torch.zeros(horizon, self.DIM, dtype=dtype, device=device)
 
         self.candidate_states = None
         self.candidate_controls = None
+        self.candidate_derivatives = None
         self.candidate_costs = None
         self.candidate_weights = None
         self.candidate_rcm_deviation = None
+        self.nominal_action_sequence = None
+        self.nominal_derivative_sequence = None
 
     def set_rcm_linearization(
         self,
@@ -89,7 +107,7 @@ class DvrkConstrainedSCPMPPIPlanner:
         state = torch.as_tensor(state, dtype=self.goal.dtype, device=self.goal.device)
         particles = torch.randn(
             self.num_samples,
-            self.control_points.shape[0],
+            self.derivative_control_points.shape[0],
             self.DIM,
             dtype=state.dtype,
             device=state.device,
@@ -98,8 +116,8 @@ class DvrkConstrainedSCPMPPIPlanner:
 
         for _ in range(self.svgd_iterations):
             particles.requires_grad_(True)
-            controls = self._candidate_controls(particles)
-            _, costs, _ = self._evaluate(state, controls)
+            actions = self._candidate_actions(particles)
+            _, costs, _ = self._evaluate(state, actions)
             beta = costs.min().detach()
             log_likelihood = -torch.log(costs - beta + 1000.0)
             score = torch.autograd.grad(log_likelihood.sum(), particles)[0]
@@ -115,24 +133,35 @@ class DvrkConstrainedSCPMPPIPlanner:
             )
 
         with torch.no_grad():
-            sparse_controls = self._sparse_controls(particles)
-            controls = self._interpolate(sparse_controls).clamp(-self.control_limit, self.control_limit)
-            states, costs, rcm_deviation = self._evaluate(state, controls)
+            sparse_derivatives = self._sparse_derivatives(particles)
+            derivatives = self._interpolate(sparse_derivatives).clamp(-self.rate_limit, self.rate_limit)
+            actions = self._integrate_actions(derivatives)
+            states, costs, rcm_deviation = self._evaluate(state, actions)
             weights = torch.softmax(-(costs - costs.min()) / self.lambda_, dim=0)
-            perturbations = sparse_controls - self.control_points
-            self.control_points.add_(torch.einsum("k,kmd->md", weights, perturbations))
-            self.control_points.clamp_(-self.control_limit, self.control_limit)
 
-            optimal_controls = self._interpolate(self.control_points).clamp(
-                -self.control_limit,
-                self.control_limit,
+            perturbations = sparse_derivatives - self.derivative_control_points
+            self.derivative_control_points.add_(torch.einsum("k,kmd->md", weights, perturbations))
+            self.derivative_control_points.clamp_(-self.rate_limit, self.rate_limit)
+
+            nominal_derivatives = self._interpolate(self.derivative_control_points).clamp(
+                -self.rate_limit,
+                self.rate_limit,
             )
-            control = optimal_controls[0].clone()
-            shifted = torch.cat((optimal_controls[1:], optimal_controls[-1:]), dim=0)
-            self.control_points.copy_(shifted[self.support_indices])
+            self.action_sequence.add_(nominal_derivatives * self.dt)
+            self.action_sequence.clamp_(-self.control_limit, self.control_limit)
+
+            self.nominal_action_sequence = self.action_sequence.clone()
+            self.nominal_derivative_sequence = nominal_derivatives.clone()
+            control = self.action_sequence[0].clone()
+
+            shifted_actions = torch.cat((self.action_sequence[1:], self.action_sequence[-1:]), dim=0)
+            self.action_sequence.copy_(shifted_actions)
+            shifted_derivatives = torch.cat((nominal_derivatives[1:], nominal_derivatives[-1:]), dim=0)
+            self.derivative_control_points.copy_(shifted_derivatives[self.support_indices])
 
             self.candidate_states = states
-            self.candidate_controls = controls
+            self.candidate_controls = actions
+            self.candidate_derivatives = derivatives
             self.candidate_costs = costs
             self.candidate_weights = weights
             self.candidate_rcm_deviation = rcm_deviation
@@ -149,39 +178,48 @@ class DvrkConstrainedSCPMPPIPlanner:
             dim=-1,
         )
 
-    def _candidate_controls(self, particles):
-        return self._interpolate(self._sparse_controls(particles)).clamp(
+    def _candidate_actions(self, particles):
+        derivatives = self._interpolate(self._sparse_derivatives(particles)).clamp(
+            -self.rate_limit,
+            self.rate_limit,
+        )
+        return self._integrate_actions(derivatives)
+
+    def _sparse_derivatives(self, particles):
+        return (self.derivative_control_points + particles * self.rate_noise_std).clamp(
+            -self.rate_limit,
+            self.rate_limit,
+        )
+
+    def _integrate_actions(self, derivatives):
+        return (self.action_sequence + derivatives * self.dt).clamp(
             -self.control_limit,
             self.control_limit,
         )
 
-    def _sparse_controls(self, particles):
-        return (self.control_points + particles * self.noise_std).clamp(
-            -self.control_limit,
-            self.control_limit,
-        )
+    def _interpolate(self, sparse_derivatives):
+        return torch.einsum("tm,...md->...td", self.spline_basis, sparse_derivatives)
 
-    def _interpolate(self, sparse_controls):
-        return torch.einsum("tm,...md->...td", self.spline_basis, sparse_controls)
-
-    def _evaluate(self, initial_state, controls):
-        state = initial_state.expand(controls.shape[0], -1)
+    def _evaluate(self, initial_state, actions):
+        state = initial_state.expand(actions.shape[0], -1)
         states = []
         for time in range(self.horizon):
-            control = controls[:, time]
-            action = control.clone()
-            action[:, :3] = state[:, :3] + control[:, :3]
-            state = self.dynamics(state, action)
+            action = actions[:, time]
+            dynamics_action = action.clone()
+            dynamics_action[:, :3] = state[:, :3] + action[:, :3]
+            state = self.dynamics(state, dynamics_action)
             states.append(state)
 
         states = torch.stack(states, dim=1)
         position_error = states[..., :3] - self.goal[:3]
-        goal_cost = 20000.0 * position_error.square().sum(dim=(-2, -1))
-        terminal_cost = 20000.0 * position_error[:, -1].square().sum(dim=-1)
-        control_cost = 0.01 * (controls / self.control_limit).square().sum(dim=(-2, -1))
-        rcm_deviation = torch.linalg.vector_norm(self._rollout_rcm_residual(controls), dim=-1)
-        # return states, goal_cost + terminal_cost + control_cost, rcm_deviation
-        return states, goal_cost + control_cost, rcm_deviation
+        goal_cost = 2000.0 * position_error.square().sum(dim=(-2, -1))
+        control_cost = 0.01 * (actions / self.control_limit).square().sum(dim=(-2, -1))
+        action_difference = actions[:, 1:] - actions[:, :-1]
+        smoothness_cost = self.action_smoothness_weight * (
+            action_difference / self.control_limit
+        ).square().sum(dim=(-2, -1))
+        rcm_deviation = torch.linalg.vector_norm(self._rollout_rcm_residual(actions), dim=-1)
+        return states, goal_cost + control_cost + smoothness_cost, rcm_deviation
 
     def _constraint_geometry(self, particles):
         def residual_with_aux(particle):
@@ -206,21 +244,22 @@ class DvrkConstrainedSCPMPPIPlanner:
         return projection.detach(), correction.detach()
 
     def _particle_rcm_residual(self, particle):
-        controls = self._interpolate(self._sparse_controls(particle)).clamp(
-            -self.control_limit,
-            self.control_limit,
+        derivatives = self._interpolate(self._sparse_derivatives(particle)).clamp(
+            -self.rate_limit,
+            self.rate_limit,
         )
-        return self._rollout_rcm_residual(controls.unsqueeze(0))[0]
+        actions = self._integrate_actions(derivatives)
+        return self._rollout_rcm_residual(actions.unsqueeze(0))[0]
 
-    def _rollout_rcm_residual(self, controls):
-        wrist_position = self.wrist_position.expand(controls.shape[0], -1)
-        shaft_direction = self.shaft_direction.expand(controls.shape[0], -1)
+    def _rollout_rcm_residual(self, actions):
+        wrist_position = self.wrist_position.expand(actions.shape[0], -1)
+        shaft_direction = self.shaft_direction.expand(actions.shape[0], -1)
         residuals = []
 
         for time in range(self.horizon):
-            body_rotation = controls[:, time, 3:6]
+            body_rotation = actions[:, time, 3:6]
             angular_displacement = torch.einsum("ij,kj->ki", self.tip_rotation, body_rotation)
-            tip_displacement = torch.cat((controls[:, time, :3], angular_displacement), dim=-1)
+            tip_displacement = torch.cat((actions[:, time, :3], angular_displacement), dim=-1)
             joint_displacement = torch.einsum("ij,kj->ki", self.tip_jacobian_inverse, tip_displacement)
             wrist_position = wrist_position + torch.einsum(
                 "ij,kj->ki",

@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 
 import manim as mn
@@ -7,6 +8,11 @@ from scipy.interpolate import CubicSpline
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 TRACE_PATH = ROOT_DIR / "temp" / "dvrk_scp_mppi_trace.pt"
+RUN_ID = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+RUN_DIR = ROOT_DIR / "media" / "dvrk_scp_mppi_runs" / RUN_ID
+mn.config.media_dir = str(RUN_DIR)
+mn.config.video_dir = str(RUN_DIR)
+mn.config.output_file = "dvrk_scp_mppi_trace.mp4"
 NUM_ROLLOUTS = 20
 FRAME_STRIDE = 4
 DT = 0.02

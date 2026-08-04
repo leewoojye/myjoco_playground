@@ -17,7 +17,7 @@ from scipy.spatial.transform import Rotation
 
 from sim_with_mujoco.environment.dvrk_needle_reach_env import DvrkNeedleReachEnv
 from sim_with_mujoco.rl.models.dynamics_dvrk import KinematicDynamics
-from sim_with_mujoco.rl.planners.constrained_scp_mppi import DvrkConstrainedSCPMPPIPlanner
+from sim_with_mujoco.rl.planners.scp_smppi import DvrkSCPSMPPIPlanner
 from sim_with_mujoco.utils.dvrk_ik import get_site_transform, solve_rcm_ik
 from sim_with_mujoco.utils.math3d import get_body_T
 from sim_with_mujoco.viewer.surrol_keyboard_viewer import SurrolKeyboardViewer
@@ -69,6 +69,12 @@ def parse_args():
         help="PyTorch device for batched MPPI rollouts and SVGD updates (default: cuda).",
     )
     parser.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="Random seed for reproducible SCP-SMPPI particle sampling (default: 0).",
+    )
+    parser.add_argument(
         "--headless",
         action="store_true",
         help="Run without the interactive GLFW viewer.",
@@ -102,6 +108,8 @@ def parse_args():
         parser.error("--record requires --headless")
     if args.video_fps <= 0 or args.render_width <= 0 or args.render_height <= 0:
         parser.error("--video-fps, --render-width, and --render-height must be positive")
+    if args.seed < 0:
+        parser.error("--seed must be non-negative")
     return args
 
 
@@ -117,6 +125,13 @@ def resolve_device(requested_device):
             f"but only {torch.cuda.device_count()} visible device(s) are available."
         )
     return device
+
+
+def set_random_seed(seed):
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 
 def render_headless_video(args, qpos_trajectory):
@@ -153,6 +168,7 @@ def render_headless_video(args, qpos_trajectory):
 
 def main():
     args = parse_args()
+    set_random_seed(args.seed)
     device = resolve_device(args.device)
     env = DvrkNeedleReachEnv(XML_PATH, control_steps=10, max_steps=200)
     env.reset()
@@ -175,18 +191,22 @@ def main():
     goal[:3] = (ecm_T_world @ np.r_[env.data.site_xpos[env.target_site_id], 1.0])[:3]
     rcm_position = (ecm_T_world @ np.r_[env.rcm_pos, 1.0])[:3]
 
-    planner = DvrkConstrainedSCPMPPIPlanner(
+    planner = DvrkSCPSMPPIPlanner(
         KinematicDynamics().to(device),
         rcm_position,
         num_samples=512,
         horizon=8,
         num_control_points=4,
         svgd_iterations=5,
-        lambda_=0.01,
+        lambda_=0.05,
+        action_smoothness_weight=3.0,
     )
     planner.set_goal(goal)
     trace = []
-    print(f"MPPI rollout device: {device}")
+    physics_tip_time = [float(env.data.time)]
+    physics_tip_position = [env.data.site_xpos[env.tip_site_id].copy()]
+    print(f"SCP-SMPPI rollout device: {device}")
+    print(f"SCP-SMPPI random seed: {args.seed}")
 
     viewer = None
     qpos_trajectory = [] if args.record is not None else None
@@ -197,7 +217,7 @@ def main():
     else:
         viewer = SurrolKeyboardViewer(env.model, env.data)
         viewer.init_viewer(
-            window_title="dVRK CSVTO-MPPI DEMO",
+            window_title="dVRK SCP-SMPPI DEMO",
             initial_camera=INITIAL_CAMERA,
             focus_position=env.data.site_xpos[env.target_site_id],
         )
@@ -215,30 +235,14 @@ def main():
                 *get_rcm_linearization(env, np.linalg.inv(world_T_ecm), ecm_T_tip, wrist_id, dof_map)
             )
             action = planner.command(state)
-            sparse_nominal_after = torch.einsum(
-                "k,kmd->md",
-                planner.candidate_weights,
-                planner.candidate_controls[:, planner.support_indices],
-            )
-            spline_nominal_after = torch.einsum(
-                "tm,md->td",
-                planner.spline_basis,
-                sparse_nominal_after,
-            )
             step_trace = {
                 "state": torch.from_numpy(state.copy()),
                 "rollout_position": planner.candidate_states[..., :3].detach().cpu().clone(),
                 "rollout_cost": planner.candidate_costs.detach().cpu().clone(),
                 "rollout_weight": planner.candidate_weights.detach().cpu().clone(),
-                "nominal_after": spline_nominal_after
-                .clamp(
-                    -planner.control_limit,
-                    planner.control_limit,
-                )
-                .detach()
-                .cpu()
-                .clone(),
-                "spline_nominal_after": spline_nominal_after.detach().cpu().clone(),
+                "nominal_after": planner.nominal_action_sequence.detach().cpu().clone(),
+                "spline_nominal_after": (planner.nominal_derivative_sequence * planner.dt).detach().cpu().clone(),
+                "derivative_after": planner.nominal_derivative_sequence.detach().cpu().clone(),
             }
             target_T_ecm = ecm_T_tip.copy()
             target_T_ecm[:3, 3] = action[:3]
@@ -264,7 +268,10 @@ def main():
                 state[6] + action[6],
                 *env.model.actuator_ctrlrange[jaw_actuator_id],
             )
-            env.plant.step(env.control_steps)
+            for _ in range(env.control_steps):
+                env.plant.step()
+                physics_tip_time.append(float(env.data.time))
+                physics_tip_position.append(env.data.site_xpos[env.tip_site_id].copy())
 
             next_state, next_world_T_ecm, _ = get_state(env, ecm_id, jaw_qpos_id)
             step_trace.update({
@@ -303,15 +310,19 @@ def main():
             {
                 "goal": torch.from_numpy(goal.copy()),
                 "position_action": "absolute_ecm",
-                "planner": "constrained_scp_mppi",
+                "planner": "scp_smppi",
+                "seed": args.seed,
                 "steps": trace,
+                "physics_tip_time": torch.as_tensor(physics_tip_time, dtype=torch.float64),
+                "physics_tip_position": torch.as_tensor(np.asarray(physics_tip_position), dtype=torch.float64),
+                "physics_samples_per_control": env.control_steps,
             },
             TRACE_PATH,
         )
         print(f"trace saved: {TRACE_PATH}")
 
     if args.record is not None:
-        print(f"MPPI finished; rendering {len(qpos_trajectory)} recorded frame(s) with OSMesa.")
+        print(f"SCP-SMPPI finished; rendering {len(qpos_trajectory)} recorded frame(s) with OSMesa.")
         render_headless_video(args, qpos_trajectory)
         print(f"Saved {len(qpos_trajectory)} frame(s) to: {args.record}")
     print("success" if tip_error <= env.tolerance else "failed")
