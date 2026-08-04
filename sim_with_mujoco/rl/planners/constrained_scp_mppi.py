@@ -1,3 +1,5 @@
+"""SCP-MPPI with an RCM inequality projection applied only during SVGD."""
+
 import math
 
 import numpy as np
@@ -6,7 +8,16 @@ from scipy.interpolate import CubicSpline
 from torch.func import jacrev, vmap
 
 
-class DvrkCSVTOPlanner:
+class DvrkConstrainedSCPMPPIPlanner:
+    """SCP-MPPI with CSVTO-style RCM projection in its SVGD update.
+
+    The MPPI objective and weighted control-point update are unchanged from
+    :class:`DvrkSCPMPPIPlanner`.  The RCM constraint is not added as a cost and
+    does not post-process the nominal control points.  It only constrains the
+    SVGD particle transport when a predicted shaft trajectory leaves the RCM
+    tolerance ball.
+    """
+
     DIM = 7
     CONTROL_LIMIT = (0.004, 0.004, 0.004, 0.06, 0.06, 0.06, 0.05)
 
@@ -112,11 +123,6 @@ class DvrkCSVTOPlanner:
             self.control_points.add_(torch.einsum("k,kmd->md", weights, perturbations))
             self.control_points.clamp_(-self.control_limit, self.control_limit)
 
-        _, correction = self._constraint_geometry(torch.zeros_like(particles[:1]))
-        with torch.no_grad():
-            correction = correction[0].reshape_as(self.control_points)
-            self.control_points.add_(self.constraint_step_size * correction * self.noise_std)
-            self.control_points.clamp_(-self.control_limit, self.control_limit)
             optimal_controls = self._interpolate(self.control_points).clamp(
                 -self.control_limit,
                 self.control_limit,
@@ -185,9 +191,6 @@ class DvrkCSVTOPlanner:
         jacobian = jacobian.reshape(particles.shape[0], self.horizon, 3, particles[0].numel())
         residual = residual.reshape(particles.shape[0], self.horizon, 3)
 
-        # RCM is an inequality constraint: its shaft distance may lie anywhere
-        # inside the tolerance ball.  Only horizon points outside that ball are
-        # projected onto its boundary; in-tolerance points retain all directions.
         deviation = torch.linalg.vector_norm(residual, dim=-1)
         normal = residual / deviation.unsqueeze(-1).clamp_min(torch.finfo(residual.dtype).eps)
         constraint_jacobian = torch.einsum("kti,ktip->ktp", normal, jacobian)

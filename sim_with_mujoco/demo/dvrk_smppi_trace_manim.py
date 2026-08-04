@@ -3,12 +3,14 @@ from pathlib import Path
 import manim as mn
 import numpy as np
 import torch
+from scipy.interpolate import CubicSpline
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-TRACE_PATH = ROOT_DIR / "temp" / "dvrk_mppi_demo4_trace.pt"
+TRACE_PATH = ROOT_DIR / "temp" / "dvrk_scp_mppi_trace.pt"
 NUM_ROLLOUTS = 20
 FRAME_STRIDE = 4
 DT = 0.02
+NUM_CONTROL_POINTS = 4
 CONTROL_LIMIT = torch.tensor([0.004, 0.004, 0.004, 0.06, 0.06, 0.06, 0.05])
 
 
@@ -32,7 +34,7 @@ class DvrkSMPPITraceScene(mn.ThreeDScene):
         ).shift(2.7 * mn.LEFT + 0.3 * mn.DOWN)
         self.set_camera_orientation(phi=68 * mn.DEGREES, theta=-55 * mn.DEGREES, zoom=1.05)
 
-        title = mn.Text("dVRK SMPPI", font_size=34, weight="BOLD").to_edge(mn.UP)
+        title = mn.Text("dVRK Constrained SCP-MPPI", font_size=34, weight="BOLD").to_edge(mn.UP)
         projection = mn.Text("ECM X-Y-Z trajectory [mm]", font_size=20, color=mn.GREY_A).move_to([-3.5, 2.95, 0])
         goal_dot = mn.Dot3D(axes.c2p(*(goal[:3] * 1000)), color=mn.GREEN, radius=0.08)
         rollouts = self._rollout_group(axes, steps[0])
@@ -46,21 +48,53 @@ class DvrkSMPPITraceScene(mn.ThreeDScene):
             self._legend_item(mn.GREEN, "goal"),
         ).arrange(mn.RIGHT, buff=0.28).scale(0.72).move_to([-3.2, -3.5, 0])
 
-        action_title = mn.Text("integrated action A", font_size=23).move_to([4.4, 2.75, 0])
-        rate_title = mn.Text("control rate U = dA / dt", font_size=23).move_to([4.4, 1.15, 0])
-        action_axes = self._panel_axes([2.55, 1.5, 0], [6.3, 2.35, 0], "|dp| [mm]", 4.5)
-        rate_axes = self._panel_axes([2.55, -0.1, 0], [6.3, 0.75, 0], "|U_p| [mm/s]", 220)
+        c1_y_max = self._continuity_y_max(steps, derivative_order=1)
+        c2_y_max = self._continuity_y_max(steps, derivative_order=2)
+        action_title = mn.Text("integrated action A", font_size=18).move_to([4.45, 2.7, 0])
+        rate_title = mn.Text("control rate U = dA / dt", font_size=18).move_to([4.45, 1.45, 0])
+        c1_title = mn.Text("C¹ spline continuity: 1st-derivative knot jump", font_size=14).move_to([4.45, 0.2, 0])
+        c2_title = mn.Text("C² spline continuity: 2nd-derivative knot jump", font_size=14).move_to([4.45, -1.05, 0])
+        action_axes = self._panel_axes([2.75, 1.85, 0], [6.15, 2.32, 0], "|dp| [mm]", 4.5)
+        rate_axes = self._panel_axes([2.75, 0.6, 0], [6.15, 1.07, 0], "|Uₚ| [mm/s]", 220)
+        c1_axes = self._panel_axes(
+            [2.75, -0.65, 0],
+            [6.15, -0.18, 0],
+            "C¹ jump [mm/s]",
+            c1_y_max,
+            x_max=1,
+            y_min=-0.1 * c1_y_max,
+        )
+        c2_axes = self._panel_axes(
+            [2.75, -1.9, 0],
+            [6.15, -1.43, 0],
+            "C² jump [mm/s²]",
+            c2_y_max,
+            x_max=1,
+            y_min=-0.1 * c2_y_max,
+        )
         action_curve = self._action_curve(action_axes, steps[0])
         rate_curve = self._rate_curve(rate_axes, steps[0])
+        c1_curve = self._continuity_curve(c1_axes, steps[0], derivative_order=1, color=mn.PURPLE_C)
+        c2_curve = self._continuity_curve(c2_axes, steps[0], derivative_order=2, color=mn.RED_C)
 
-        step_number = mn.Integer(0, font_size=22)
-        error_number = mn.DecimalNumber(self._tip_error(steps[0], goal), num_decimal_places=1, font_size=22)
-        omega_number = mn.DecimalNumber(self._omega(steps[0]), num_decimal_places=2, font_size=22)
+        step_number = mn.Integer(0, font_size=22, mob_class=mn.Text)
+        error_number = mn.DecimalNumber(
+            self._tip_error(steps[0], goal),
+            num_decimal_places=1,
+            font_size=22,
+            mob_class=mn.Text,
+        )
+        omega_number = mn.DecimalNumber(
+            self._omega(steps[0]),
+            num_decimal_places=2,
+            font_size=22,
+            mob_class=mn.Text,
+        )
         stats = mn.VGroup(
             mn.VGroup(mn.Text("step", font_size=18, color=mn.GREY_B), step_number).arrange(mn.RIGHT, buff=0.12),
             mn.VGroup(mn.Text("tip error", font_size=18, color=mn.GREY_B), error_number, mn.Text("mm", font_size=18)).arrange(mn.RIGHT, buff=0.1),
             mn.VGroup(mn.Text("Omega(A)", font_size=18, color=mn.GREY_B), omega_number).arrange(mn.RIGHT, buff=0.12),
-        ).arrange(mn.DOWN, aligned_edge=mn.LEFT, buff=0.12).move_to([4.15, -2.45, 0], aligned_edge=mn.LEFT)
+        ).arrange(mn.DOWN, aligned_edge=mn.LEFT, buff=0.12).move_to([4.15, -3.0, 0], aligned_edge=mn.LEFT)
 
         self.camera.background_color = "#101318"
         self.add_fixed_in_frame_mobjects(
@@ -69,16 +103,39 @@ class DvrkSMPPITraceScene(mn.ThreeDScene):
             legend,
             action_title,
             rate_title,
+            c1_title,
+            c2_title,
             action_axes,
             rate_axes,
+            c1_axes,
+            c2_axes,
             action_curve,
             rate_curve,
+            c1_curve,
+            c2_curve,
             stats,
         )
         self.play(
             mn.FadeIn(title, projection, legend, goal_dot),
             mn.Create(axes),
-            mn.FadeIn(rollouts, actual_path, tip_dot, action_title, rate_title, action_axes, rate_axes, action_curve, rate_curve, stats),
+            mn.FadeIn(
+                rollouts,
+                actual_path,
+                tip_dot,
+                action_title,
+                rate_title,
+                c1_title,
+                c2_title,
+                action_axes,
+                rate_axes,
+                c1_axes,
+                c2_axes,
+                action_curve,
+                rate_curve,
+                c1_curve,
+                c2_curve,
+                stats,
+            ),
             run_time=0.8,
         )
 
@@ -97,6 +154,8 @@ class DvrkSMPPITraceScene(mn.ThreeDScene):
                 tip_dot.animate.move_to(axes.c2p(*(actual[frame_id + 1] * 1000))),
                 mn.Transform(action_curve, self._action_curve(action_axes, step)),
                 mn.Transform(rate_curve, self._rate_curve(rate_axes, step)),
+                mn.Transform(c1_curve, self._continuity_curve(c1_axes, step, derivative_order=1, color=mn.PURPLE_C)),
+                mn.Transform(c2_curve, self._continuity_curve(c2_axes, step, derivative_order=2, color=mn.RED_C)),
                 run_time=0.12,
                 rate_func=mn.linear,
             )
@@ -135,10 +194,10 @@ class DvrkSMPPITraceScene(mn.ThreeDScene):
         ])
 
     @staticmethod
-    def _panel_axes(bottom_left, top_right, label, y_max):
+    def _panel_axes(bottom_left, top_right, label, y_max, x_max=7, y_min=0.0):
         axes = mn.Axes(
-            x_range=[0, 7, 1],
-            y_range=[0, y_max, y_max / 2],
+            x_range=[0, x_max, 1],
+            y_range=[y_min, y_max, (y_max - y_min) / 2],
             x_length=top_right[0] - bottom_left[0],
             y_length=top_right[1] - bottom_left[1],
             tips=False,
@@ -160,6 +219,42 @@ class DvrkSMPPITraceScene(mn.ThreeDScene):
         if len(values) == 1:
             values = np.repeat(values, 2)
         return axes.plot_line_graph(range(len(values)), np.clip(values, 0, 220), add_vertex_dots=False, line_color=mn.ORANGE).set_stroke(width=3)
+
+    @staticmethod
+    def _continuity_jumps(step, derivative_order):
+        if "spline_nominal_after" not in step:
+            raise ValueError(
+                "This trace lacks the unclamped spline control sequence. "
+                "Run dvrk_scp_mppi_demo.py again to create a continuity-compatible trace."
+            )
+        values = step["spline_nominal_after"][:, :3].numpy().astype(np.float64)
+        support_indices = np.linspace(0, len(values) - 1, NUM_CONTROL_POINTS).round().astype(int)
+        spline = CubicSpline(support_indices * DT, values[support_indices], axis=0)
+        knots = support_indices[1:-1] * DT
+        jumps = []
+        for knot in knots:
+            left = spline(np.nextafter(knot, -np.inf), nu=derivative_order)
+            right = spline(np.nextafter(knot, np.inf), nu=derivative_order)
+            jumps.append(np.linalg.norm(right - left) * 1000.0)
+        return np.asarray(jumps)
+
+    @classmethod
+    def _continuity_y_max(cls, steps, derivative_order):
+        maximum = max(
+            (cls._continuity_jumps(step, derivative_order).max(initial=0.0) for step in steps),
+            default=0.0,
+        )
+        return max(1.25 * maximum, 1e-9)
+
+    @classmethod
+    def _continuity_curve(cls, panel, step, derivative_order, color):
+        values = cls._continuity_jumps(step, derivative_order)
+        return panel[0].plot_line_graph(
+            range(len(values)),
+            values,
+            add_vertex_dots=True,
+            line_color=color,
+        ).set_stroke(width=2.5)
 
     @staticmethod
     def _omega(step):

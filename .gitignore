@@ -1,6 +1,8 @@
 /robotis_mujoco_menagerie/
 /venv/
 /.venv/
+/.conda_pkgs/
+/outputs/
 /temp/
 /media/
 /sim_with_mujoco/temp/

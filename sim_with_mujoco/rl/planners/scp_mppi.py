@@ -19,7 +19,7 @@ class DvrkSCPMPPIPlanner:
         svgd_iterations=3,
         svgd_step_size=0.05,
         lambda_=0.01,
-        rcm_tolerance=0.002,
+        rcm_tolerance=0.015,
         rcm_weight=10.0,
     ):
         self.dynamics = dynamics
