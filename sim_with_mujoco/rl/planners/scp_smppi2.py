@@ -1,4 +1,16 @@
-"""SCP-SMPPI with derivative controls, action integration, and RCM-projected SVGD."""
+"""SCP-SMPPI with sparse derivative controls and an SE(3) error-state cost.
+
+The MPPI/SVGD/RCM structure is kept from the existing planner.  Only the pose
+rollout and running cost are extended to use the Lie-group error formulation
+from Arefinia et al. (2026):
+
+    e = g_d^{-1} g,
+    omega = Log(R_e),
+    chi = J_l(omega)^{-1} p_e,
+
+with a finite-difference body-twist velocity error.  No EWMA uncertainty term
+is included.
+"""
 
 import math
 
@@ -9,20 +21,34 @@ from torch.func import jacrev, vmap
 
 
 class DvrkSCPSMPPIPlanner:
-    """Sparse-control-point SMPPI with the existing RCM SVGD projection.
+    """Sparse-control-point SMPPI with RCM-projected SVGD and SE(3) costs.
 
-    Particles parameterize sparse derivative controls ``U``.  Cubic spline
-    interpolation creates a derivative sequence, which is integrated over one
-    MPC update into the persistent action sequence ``A``.  The existing
-    position/control costs are retained, and ``Omega(A)`` penalizes action
-    variation along the prediction horizon.  RCM projection is applied only
-    to the SVGD transport of the sparse ``U`` particles.
+    The public state layout remains compact and backward compatible::
+
+        state = [p_x, p_y, p_z, r_x, r_y, r_z, jaw]
+
+    where ``r`` is a rotation vector for the actual tip rotation matrix in the
+    ECM frame.  During cost evaluation the pose is lifted to SE(3), so the
+    controller does not subtract rotation-vector coordinates directly.
+
+    When ``use_se3_kinematic_rollout`` is true, rollout orientation is updated
+    by right/body composition ``R_next = R_current Exp(delta_r^)``.  This lets
+    the current dVRK demo use the existing ``KinematicDynamics`` object without
+    modifying ``dynamics_dvrk.py``.
     """
 
     DIM = 7
-    # CONTROL_LIMIT = (0.002, 0.002, 0.002, 0.06, 0.06, 0.06, 0.05)
     CONTROL_LIMIT = (0.004, 0.004, 0.004, 0.06, 0.06, 0.06, 0.05)
-    RATE_LIMIT = (0.1, 0.1, 0.1, 0.06, 0.06, 0.06, 0.05)  # 위치단위: m/s
+    RATE_LIMIT = (0.1, 0.1, 0.1, 0.06, 0.06, 0.06, 0.05)
+    COST_COMPONENT_NAMES = (
+        "orientation_running",
+        "position_running",
+        "velocity_running",
+        "control_running",
+        "action_smoothness",
+        "orientation_terminal",
+        "position_terminal",
+    )
 
     def __init__(
         self,
@@ -38,9 +64,20 @@ class DvrkSCPSMPPIPlanner:
         rcm_tolerance=0.015,
         dt=0.02,
         action_smoothness_weight=0.1,
+        orientation_weight=0.0,  # 100
+        position_weight=2000.0,
+        velocity_weight=1.0,
+        control_weight=0.01,
+        terminal_orientation_weight=0.0,  # 1000
+        terminal_position_weight=20000.0,
+        use_se3_kinematic_rollout=False,
     ):
         if dt <= 0.0:
             raise ValueError("dt must be positive")
+        if horizon < 2:
+            raise ValueError("horizon must be at least 2")
+        if num_control_points < 2:
+            raise ValueError("num_control_points must be at least 2")
 
         self.dynamics = dynamics
         self.num_samples = num_samples
@@ -52,6 +89,13 @@ class DvrkSCPSMPPIPlanner:
         self.rcm_tolerance = rcm_tolerance
         self.dt = dt
         self.action_smoothness_weight = action_smoothness_weight
+        self.orientation_weight = orientation_weight
+        self.position_weight = position_weight
+        self.velocity_weight = velocity_weight
+        self.control_weight = control_weight
+        self.terminal_orientation_weight = terminal_orientation_weight
+        self.terminal_position_weight = terminal_position_weight
+        self.use_se3_kinematic_rollout = use_se3_kinematic_rollout
 
         dtype = dynamics.centers.dtype
         device = dynamics.centers.device
@@ -59,14 +103,12 @@ class DvrkSCPSMPPIPlanner:
         self.rcm_position = torch.as_tensor(rcm_position, dtype=dtype, device=device)
         self.control_limit = torch.tensor(self.CONTROL_LIMIT, dtype=dtype, device=device)
         self.speed_limit = torch.tensor(self.RATE_LIMIT, dtype=dtype, device=device)
-        # self.rate_limit = self.control_limit / dt
-        # self.rate_limit = 0.002  # dt 동안 낼 수 있는 속도 상한선
-        # self.rate_limit = self.speed_limit / dt
         self.rate_limit = self.speed_limit
         self.rate_noise_std = 0.5 * self.rate_limit
-        # self.rate_noise_std = self.rate_limit
 
         support_indices = np.linspace(0, horizon - 1, num_control_points).round().astype(int)
+        if np.unique(support_indices).size != num_control_points:
+            raise ValueError("num_control_points is too large for the selected horizon")
         spline = CubicSpline(support_indices, np.eye(num_control_points), axis=0)
         spline_basis = spline(np.arange(horizon)).astype(np.float32)
         self.support_indices = torch.as_tensor(support_indices, dtype=torch.long, device=device)
@@ -85,6 +127,9 @@ class DvrkSCPSMPPIPlanner:
         self.candidate_costs = None
         self.candidate_weights = None
         self.candidate_rcm_deviation = None
+        self.candidate_pose_errors = None
+        self.candidate_velocity_errors = None
+        self.candidate_cost_components = None
         self.nominal_action_sequence = None
         self.nominal_derivative_sequence = None
 
@@ -108,7 +153,20 @@ class DvrkSCPSMPPIPlanner:
         self.wrist_rotation_jacobian = convert(wrist_rotation_jacobian)
 
     def set_goal(self, goal):
-        self.goal = torch.as_tensor(goal, dtype=self.goal.dtype, device=self.goal.device)
+        goal = torch.as_tensor(goal, dtype=self.goal.dtype, device=self.goal.device)
+        if goal.shape != (self.DIM,):
+            raise ValueError(f"goal must have shape ({self.DIM},), got {tuple(goal.shape)}")
+        self.goal = goal
+
+    def pose_error(self, state):
+        """Return the paper-style pose error ``[omega, chi]``.
+
+        ``omega`` is the logarithm of ``R_goal.T @ R`` and ``chi`` is the
+        translation of ``goal^{-1} current`` corrected by the inverse SO(3)
+        left Jacobian.
+        """
+        state = torch.as_tensor(state, dtype=self.goal.dtype, device=self.goal.device)
+        return self._se3_pose_error(state)
 
     def command(self, state):
         state = torch.as_tensor(state, dtype=self.goal.dtype, device=self.goal.device)
@@ -124,8 +182,8 @@ class DvrkSCPSMPPIPlanner:
         for _ in range(self.svgd_iterations):
             particles.requires_grad_(True)
             actions = self._candidate_actions(particles)
-            _, costs, rcm_dev = self._evaluate(state, actions)
-            costs = costs + rcm_dev.amax(dim=-1) * 10000
+            _, costs, rcm_dev, _, _, _ = self._evaluate(state, actions)
+            costs = costs + rcm_dev.amax(dim=-1) * 10000.0
             beta = costs.min().detach()
             log_likelihood = -torch.log(costs - beta + 10.0)
             score = torch.autograd.grad(log_likelihood.sum(), particles)[0]
@@ -144,7 +202,10 @@ class DvrkSCPSMPPIPlanner:
             sparse_derivatives = self._sparse_derivatives(particles)
             derivatives = self._interpolate(sparse_derivatives).clamp(-self.rate_limit, self.rate_limit)
             actions = self._integrate_actions(derivatives)
-            states, costs, rcm_deviation = self._evaluate(state, actions)
+            states, costs, rcm_deviation, pose_errors, velocity_errors, cost_components = self._evaluate(
+                state,
+                actions,
+            )
             weights = torch.softmax(-(costs - costs.min()) / self.lambda_, dim=0)
 
             perturbations = sparse_derivatives - self.derivative_control_points
@@ -173,6 +234,9 @@ class DvrkSCPSMPPIPlanner:
             self.candidate_costs = costs
             self.candidate_weights = weights
             self.candidate_rcm_deviation = rcm_deviation
+            self.candidate_pose_errors = pose_errors
+            self.candidate_velocity_errors = velocity_errors
+            self.candidate_cost_components = cost_components
 
         action = control.clone()
         action[:3] = state[:3] + control[:3]
@@ -215,30 +279,105 @@ class DvrkSCPSMPPIPlanner:
             action = actions[:, time]
             dynamics_action = action.clone()
             dynamics_action[:, :3] = state[:, :3] + action[:, :3]
-            state = self.dynamics(state, dynamics_action)
+            if self.use_se3_kinematic_rollout:
+                state = self._se3_kinematic_step(state, dynamics_action, action)
+            else:
+                state = self.dynamics(state, dynamics_action)
             states.append(state)
 
         states = torch.stack(states, dim=1)
-        position_error = states[..., :3] - self.goal[:3]
-        per_time_cost = position_error.square().sum(dim=-1)  # [K, T]
-        min_cost, min_t = per_time_cost.min(dim=-1)  # min_cost: [K], min_t: [K]
+        pose_errors = self._se3_pose_error(states)
+        velocity_errors = self._finite_difference_velocity_error(initial_state, states, pose_errors[..., :3])
 
-        goal_cost = 2000.0 * position_error.square().sum(dim=(-2, -1))
-        # path_vec = torch.linalg.vector_norm(position_error, dim=-1).sum(dim=-1)  # 누적 L2 거리 (시간 합)
-        # 한 번에 스칼라(전체 평균+거리)로
-        # path_scalar = torch.linalg.vector_norm(position_error.reshape(position_error.shape[0], -1), dim=-1)
-        terminal_cost = 20000.0 * position_error[:, -1].square().sum(dim=-1)
-        # terminal_cost = 20000.0 * min_cost
+        orientation_running = self.orientation_weight * pose_errors[..., :3].square().sum(dim=(-2, -1))
+        position_running = self.position_weight * pose_errors[..., 3:6].square().sum(dim=(-2, -1))
+        velocity_running = self.velocity_weight * velocity_errors.square().sum(dim=(-2, -1))
+        control_running = 0.5 * self.control_weight * (actions / self.control_limit).square().sum(dim=(-2, -1))
 
-        control_cost = 0.01 * (actions / self.control_limit).square().sum(dim=(-2, -1))
         action_difference = actions[:, 1:] - actions[:, :-1]
-        smoothness_cost = self.action_smoothness_weight * (action_difference / self.control_limit).square().sum(
+        action_smoothness = self.action_smoothness_weight * (action_difference / self.control_limit).square().sum(
             dim=(-2, -1)
         )
+
+        orientation_terminal = self.terminal_orientation_weight * pose_errors[:, -1, :3].square().sum(dim=-1)
+        position_terminal = self.terminal_position_weight * pose_errors[:, -1, 3:6].square().sum(dim=-1)
+
+        cost_components = torch.stack(
+            (
+                orientation_running,
+                position_running,
+                velocity_running,
+                control_running,
+                action_smoothness,
+                orientation_terminal,
+                position_terminal,
+            ),
+            dim=-1,
+        )
+        total_cost = cost_components.sum(dim=-1)
         rcm_deviation = torch.linalg.vector_norm(self._rollout_rcm_residual(actions), dim=-1)
-        # rcm_dev_scalar = torch.linalg.vector_norm(self._rollout_rcm_residual(actions), dim=-1).amax(dim=-1)
-        return states, goal_cost + terminal_cost + smoothness_cost, rcm_deviation
-        # return states, goal_cost + terminal_cost + control_cost + smoothness_cost, rcm_deviation
+        return states, total_cost, rcm_deviation, pose_errors, velocity_errors, cost_components
+
+    def _se3_kinematic_step(self, state, dynamics_action, incremental_action):
+        """Kinematic dVRK rollout with group-consistent body rotation."""
+        position = dynamics_action[..., :3]
+        rotation = self._compose_body_rotation(state[..., 3:6], incremental_action[..., 3:6])
+        jaw = state[..., 6:7] + incremental_action[..., 6:7]
+        return torch.cat((position, rotation, jaw), dim=-1)
+
+    def _se3_pose_error(self, state):
+        current_position = state[..., :3]
+        current_rotation = state[..., 3:6]
+        goal_position = self.goal[:3]
+        goal_rotation = self.goal[3:6]
+
+        omega = self._relative_rotation_vector(goal_rotation, current_rotation)
+        goal_rotation_matrix = self._rotation_matrix(goal_rotation)
+        position_error_goal_frame = torch.einsum(
+            "ji,...j->...i",
+            goal_rotation_matrix,
+            current_position - goal_position,
+        )
+        chi = torch.einsum(
+            "...ij,...j->...i",
+            self._left_jacobian_inverse(omega),
+            position_error_goal_frame,
+        )
+        return torch.cat((omega, chi), dim=-1)
+
+    def _finite_difference_velocity_error(self, initial_state, states, pose_rotation_error):
+        """Approximate the paper's tangent-space body-twist error.
+
+        The current demo has a pose-only kinematic state and a static target.
+        Thus desired twist is zero and the actual body twist is estimated from
+        consecutive rollout poses using ``Log(T_prev^{-1} T_next) / dt``.
+        """
+        batch_initial = initial_state.expand(states.shape[0], -1).unsqueeze(1)
+        all_states = torch.cat((batch_initial, states), dim=1)
+        previous = all_states[:, :-1]
+        current = all_states[:, 1:]
+
+        delta_omega = self._relative_rotation_vector(previous[..., 3:6], current[..., 3:6])
+        previous_rotation = self._rotation_matrix(previous[..., 3:6])
+        delta_position_body = torch.einsum(
+            "...ji,...j->...i",
+            previous_rotation,
+            current[..., :3] - previous[..., :3],
+        )
+        delta_linear = torch.einsum(
+            "...ij,...j->...i",
+            self._left_jacobian_inverse(delta_omega),
+            delta_position_body,
+        )
+        body_twist = torch.cat((delta_omega / self.dt, delta_linear / self.dt), dim=-1)
+
+        raw_velocity_error = -body_twist
+        corrected_linear_error = torch.einsum(
+            "...ij,...j->...i",
+            self._left_jacobian_inverse(pose_rotation_error),
+            raw_velocity_error[..., 3:6],
+        )
+        return torch.cat((raw_velocity_error[..., :3], corrected_linear_error), dim=-1)
 
     def _constraint_geometry(self, particles):
         def residual_with_aux(particle):
@@ -294,7 +433,6 @@ class DvrkSCPSMPPIPlanner:
             offset = self.rcm_position - wrist_position
             residuals.append(offset - (offset * shaft_direction).sum(dim=-1, keepdim=True) * shaft_direction)
 
-        # return torch.stack(residuals, dim=1)
         return torch.stack(residuals, dim=1) - 0.002
 
     def _stein_direction(self, particles, score):
@@ -308,6 +446,79 @@ class DvrkSCPSMPPIPlanner:
         attraction = kernel.T @ flat_score / self.num_samples
         repulsion = -(kernel[..., None] * difference).sum(dim=0) / (self.num_samples * bandwidth)
         return (attraction + repulsion).reshape_as(particles)
+
+    @staticmethod
+    def _rotation_vector_to_quaternion(rotation_vector):
+        angle = torch.linalg.vector_norm(rotation_vector, dim=-1)
+        half_angle = 0.5 * angle
+        vector_scale = 0.5 * torch.sinc(half_angle / torch.pi)
+        return torch.cat(
+            (
+                torch.cos(half_angle).unsqueeze(-1),
+                vector_scale.unsqueeze(-1) * rotation_vector,
+            ),
+            dim=-1,
+        )
+
+    @staticmethod
+    def _quaternion_multiply(left, right):
+        left, right = torch.broadcast_tensors(left, right)
+        left_scalar, left_vector = left[..., :1], left[..., 1:]
+        right_scalar, right_vector = right[..., :1], right[..., 1:]
+        scalar = left_scalar * right_scalar - (left_vector * right_vector).sum(dim=-1, keepdim=True)
+        vector = (
+            left_scalar * right_vector
+            + right_scalar * left_vector
+            + torch.linalg.cross(left_vector, right_vector, dim=-1)
+        )
+        return torch.cat((scalar, vector), dim=-1)
+
+    @staticmethod
+    def _quaternion_to_rotation_vector(quaternion):
+        quaternion = quaternion / torch.linalg.vector_norm(quaternion, dim=-1, keepdim=True).clamp_min(
+            torch.finfo(quaternion.dtype).eps
+        )
+        quaternion = torch.where(quaternion[..., :1] < 0.0, -quaternion, quaternion)
+        vector_norm = torch.linalg.vector_norm(quaternion[..., 1:], dim=-1)
+        angle = 2.0 * torch.atan2(vector_norm, quaternion[..., 0].clamp_min(0.0))
+        scale = angle / vector_norm.clamp_min(torch.finfo(quaternion.dtype).eps)
+        scale = torch.where(vector_norm > 1e-7, scale, torch.full_like(scale, 2.0))
+        return scale.unsqueeze(-1) * quaternion[..., 1:]
+
+    @classmethod
+    def _compose_body_rotation(cls, current_rotation, body_increment):
+        current_quaternion = cls._rotation_vector_to_quaternion(current_rotation)
+        increment_quaternion = cls._rotation_vector_to_quaternion(body_increment)
+        return cls._quaternion_to_rotation_vector(cls._quaternion_multiply(current_quaternion, increment_quaternion))
+
+    @classmethod
+    def _relative_rotation_vector(cls, reference_rotation, current_rotation):
+        reference_quaternion = cls._rotation_vector_to_quaternion(reference_rotation)
+        current_quaternion = cls._rotation_vector_to_quaternion(current_rotation)
+        reference_inverse = torch.cat(
+            (reference_quaternion[..., :1], -reference_quaternion[..., 1:]),
+            dim=-1,
+        )
+        return cls._quaternion_to_rotation_vector(cls._quaternion_multiply(reference_inverse, current_quaternion))
+
+    @staticmethod
+    def _left_jacobian_inverse(rotation_vector):
+        """Inverse SO(3) left Jacobian with a small-angle series."""
+        x, y, z = rotation_vector.unbind(dim=-1)
+        zero = torch.zeros_like(x)
+        skew = torch.stack(
+            (zero, -z, y, z, zero, -x, -y, x, zero),
+            dim=-1,
+        ).reshape(*rotation_vector.shape[:-1], 3, 3)
+        skew_squared = skew @ skew
+        theta = torch.linalg.vector_norm(rotation_vector, dim=-1)
+        safe_theta = theta.clamp_min(1e-7)
+        half_theta = 0.5 * safe_theta
+        coefficient_regular = (1.0 - half_theta / torch.tan(half_theta)) / safe_theta.square()
+        coefficient_series = 1.0 / 12.0 + theta.square() / 720.0 + theta.pow(4) / 30240.0
+        coefficient = torch.where(theta < 1e-4, coefficient_series, coefficient_regular)
+        eye = torch.eye(3, dtype=rotation_vector.dtype, device=rotation_vector.device)
+        return eye - 0.5 * skew + coefficient[..., None, None] * skew_squared
 
     @staticmethod
     def _rotation_matrix(rotation_vector):

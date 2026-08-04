@@ -18,7 +18,8 @@ from scipy.spatial.transform import Rotation
 from sim_with_mujoco.environment.dvrk_needle_reach_env import DvrkNeedleReachEnv
 from sim_with_mujoco.rl.models.dynamics_dvrk import KinematicDynamics
 from sim_with_mujoco.rl.planners.scp_smppi import DvrkSCPSMPPIPlanner
-from sim_with_mujoco.utils.dvrk_ik import get_site_transform, solve_rcm_ik
+from sim_with_mujoco.utils.dvrk_ik import get_site_transform
+from sim_with_mujoco.utils.ik_qp import solve_differential_ik
 from sim_with_mujoco.utils.math3d import get_body_T
 from sim_with_mujoco.viewer.surrol_keyboard_viewer import SurrolKeyboardViewer
 
@@ -184,6 +185,7 @@ def main():
     pitch_3_id = env.get_id(mujoco.mjtObj.mjOBJ_JOINT, "PSM1_pitch_3")
     dof_map[env.model.jnt_dofadr[pitch_2_id], 1] = -1.0
     dof_map[env.model.jnt_dofadr[pitch_3_id], 1] = 1.0
+    control_dt = env.control_steps * env.model.opt.timestep
 
     state, world_T_ecm, _ = get_state(env, ecm_id, jaw_qpos_id)
     ecm_T_world = np.linalg.inv(world_T_ecm)
@@ -248,16 +250,25 @@ def main():
             target_T_ecm[:3, 3] = action[:3]
             target_T_ecm[:3, :3] = ecm_T_tip[:3, :3] @ Rotation.from_rotvec(action[3:6]).as_matrix()
 
-            q_des = solve_rcm_ik(
+            q_des, _, ik_success = solve_differential_ik(
                 env.model,
                 env.data,
-                world_T_ecm @ target_T_ecm,
-                env.tip_site_id,
-                env.rcm_pos,
+                (
+                    env.tip_site_id,
+                    world_T_ecm @ target_T_ecm,
+                    True,
+                    1.0,
+                    mujoco.mjtObj.mjOBJ_SITE,
+                ),
                 env.joint_ids,
+                dt=control_dt,
+                gain=20.0,
+                damping=1e-3,
                 dq_limit=0.045,
-                rcm_site_id=env.rcm_site_id,
+                dof_map=dof_map,
             )
+            if not ik_success:
+                raise RuntimeError("Differential IK least-squares solve failed.")
             for joint_id, actuator_id in zip(env.joint_ids, env.arm_actuator_ids):
                 target_qpos = q_des[env.model.jnt_qposadr[joint_id]]
                 env.data.ctrl[actuator_id] = np.clip(

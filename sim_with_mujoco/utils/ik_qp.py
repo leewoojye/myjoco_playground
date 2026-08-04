@@ -3,8 +3,14 @@ import numpy as np
 from scipy.optimize import lsq_linear
 
 from sim.model.kinematics.ik import calculate_twist_error
-from sim.model.math3d.lie import Adjoint
 from sim_with_mujoco.utils.math3d import get_body_T
+
+
+def _get_site_T(data, site_id):
+    T = np.eye(4)
+    T[:3, 3] = data.site_xpos[site_id]
+    T[:3, :3] = data.site_xmat[site_id].reshape(3, 3)
+    return T
 
 
 # QP 기반 differential IK 속도 명령과 다음 관절각 반환
@@ -19,6 +25,7 @@ def solve_differential_ik(
     damping=1e-3,
     dq_limit=0.05,
     qvel_limit=None,
+    dof_map=None,
 ):
     if isinstance(targets, tuple):
         targets = [targets]
@@ -28,28 +35,63 @@ def solve_differential_ik(
     qpos_ids = model.jnt_qposadr[joint_ids]
     q_current = data.qpos[qpos_ids]
 
+    if dof_map is not None:
+        dof_map = np.asarray(dof_map, dtype=float)
+        expected_shape = (model.nv, len(joint_ids))
+        if dof_map.shape != expected_shape:
+            raise ValueError(f"dof_map must have shape {expected_shape}, got {dof_map.shape}")
+
     J_list = []
-    vel_list = []  # 현재 오차를 줄이기 위해 e.e가 내야할 속도 리스트
+    vel_list = []  # 현재 오차를 줄이기 위해 e.e가 내야 할 속도 리스트
 
     for target in targets:
-        body_id, target_T, is_pose, weight = target
+        if len(target) == 4:
+            object_id, target_T, is_pose, weight = target
+            object_type = mujoco.mjtObj.mjOBJ_BODY
+        elif len(target) == 5:
+            object_id, target_T, is_pose, weight, object_type = target
+        else:
+            raise ValueError(
+                "Each target must be (object_id, target_T, is_pose, weight) "
+                "or (object_id, target_T, is_pose, weight, object_type)."
+            )
 
+        object_id = int(object_id)
+        object_type = int(object_type)
         jacp = np.zeros((3, model.nv))
         jacr = np.zeros((3, model.nv))
-        mujoco.mj_jacBody(model, data, jacp, jacr, body_id)
+
+        if object_type == int(mujoco.mjtObj.mjOBJ_BODY):
+            mujoco.mj_jacBody(model, data, jacp, jacr, object_id)
+            T_current = get_body_T(data, object_id)
+        elif object_type == int(mujoco.mjtObj.mjOBJ_SITE):
+            mujoco.mj_jacSite(model, data, jacp, jacr, object_id)
+            T_current = _get_site_T(data, object_id)
+        else:
+            raise ValueError("solve_differential_ik supports body and site targets only")
 
         if is_pose:
-            T_current = get_body_T(data, body_id)
             _, err = calculate_twist_error(T_current, target_T)
-            J = Adjoint(np.linalg.inv(T_current)) @ np.vstack([jacr, jacp])
+            # mj_jacBody/mj_jacSite return angular and point-linear velocity
+            # Jacobians in the world frame.  Rotate both blocks into the
+            # current body/site frame to match Log(T_current^-1 T_target).
+            R_world_to_local = T_current[:3, :3].T
+            J = np.block([
+                [R_world_to_local, np.zeros((3, 3))],
+                [np.zeros((3, 3)), R_world_to_local],
+            ]) @ np.vstack([jacr, jacp])
         else:
-            T_current = get_body_T(data, body_id)
             target_pos = target_T[:3, 3]
             err = target_pos - T_current[:3, 3]
             J = jacp
 
+        # For a closed-chain model, dof_map projects the full MuJoCo Jacobian
+        # onto the independent coordinates.  For the dVRK PSM this includes
+        # the pitch_2/pitch_3 motion induced by the independent pitch joint.
+        J_controlled = J[:, dof_ids] if dof_map is None else J @ dof_map
+
         scale = np.sqrt(weight)
-        J_list.append(scale * J[:, dof_ids])
+        J_list.append(scale * J_controlled)
         vel_list.append(scale * gain * err)
 
     A = np.vstack(J_list)

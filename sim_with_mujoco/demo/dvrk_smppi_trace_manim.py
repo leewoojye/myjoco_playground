@@ -13,7 +13,7 @@ RUN_DIR = ROOT_DIR / "media" / "dvrk_scp_mppi_runs" / RUN_ID
 mn.config.media_dir = str(RUN_DIR)
 mn.config.video_dir = str(RUN_DIR)
 mn.config.output_file = "dvrk_scp_mppi_trace.mp4"
-NUM_ROLLOUTS = 20
+NUM_ROLLOUTS = 256
 FRAME_STRIDE = 4
 DT = 0.02
 NUM_CONTROL_POINTS = 4
@@ -47,12 +47,18 @@ class DvrkSMPPITraceScene(mn.ThreeDScene):
         actual_path = self._path(axes, actual[:2], mn.WHITE, 4.0, 1.0)
         tip_dot = mn.Dot3D(axes.c2p(*(actual[1] * 1000)), color=mn.WHITE, radius=0.065)
 
-        legend = mn.VGroup(
-            self._legend_item(mn.BLUE_B, "sampled rollouts"),
-            self._legend_item(mn.YELLOW, "lowest cost"),
-            self._legend_item(mn.WHITE, "executed tip"),
-            self._legend_item(mn.GREEN, "goal"),
-        ).arrange(mn.RIGHT, buff=0.28).scale(0.72).move_to([-3.2, -3.5, 0])
+        legend = (
+            mn
+            .VGroup(
+                self._legend_item(mn.BLUE_B, "sampled rollouts"),
+                self._legend_item(mn.YELLOW, "lowest cost"),
+                self._legend_item(mn.WHITE, "executed tip"),
+                self._legend_item(mn.GREEN, "goal"),
+            )
+            .arrange(mn.RIGHT, buff=0.28)
+            .scale(0.72)
+            .move_to([-3.2, -3.5, 0])
+        )
 
         c1_y_max = self._continuity_y_max(steps, derivative_order=1)
         c2_y_max = self._continuity_y_max(steps, derivative_order=2)
@@ -96,11 +102,20 @@ class DvrkSMPPITraceScene(mn.ThreeDScene):
             font_size=22,
             mob_class=mn.Text,
         )
-        stats = mn.VGroup(
-            mn.VGroup(mn.Text("step", font_size=18, color=mn.GREY_B), step_number).arrange(mn.RIGHT, buff=0.12),
-            mn.VGroup(mn.Text("tip error", font_size=18, color=mn.GREY_B), error_number, mn.Text("mm", font_size=18)).arrange(mn.RIGHT, buff=0.1),
-            mn.VGroup(mn.Text("Omega(A)", font_size=18, color=mn.GREY_B), omega_number).arrange(mn.RIGHT, buff=0.12),
-        ).arrange(mn.DOWN, aligned_edge=mn.LEFT, buff=0.12).move_to([4.15, -3.0, 0], aligned_edge=mn.LEFT)
+        stats = (
+            mn
+            .VGroup(
+                mn.VGroup(mn.Text("step", font_size=18, color=mn.GREY_B), step_number).arrange(mn.RIGHT, buff=0.12),
+                mn.VGroup(
+                    mn.Text("tip error", font_size=18, color=mn.GREY_B), error_number, mn.Text("mm", font_size=18)
+                ).arrange(mn.RIGHT, buff=0.1),
+                mn.VGroup(mn.Text("Omega(A)", font_size=18, color=mn.GREY_B), omega_number).arrange(
+                    mn.RIGHT, buff=0.12
+                ),
+            )
+            .arrange(mn.DOWN, aligned_edge=mn.LEFT, buff=0.12)
+            .move_to([4.15, -3.0, 0], aligned_edge=mn.LEFT)
+        )
 
         self.camera.background_color = "#101318"
         self.add_fixed_in_frame_mobjects(
@@ -187,7 +202,9 @@ class DvrkSMPPITraceScene(mn.ThreeDScene):
         return path.set_stroke(color, width=width, opacity=opacity)
 
     def _rollout_group(self, axes, step):
-        indices = torch.topk(step["rollout_cost"], min(NUM_ROLLOUTS, step["rollout_cost"].numel()), largest=False).indices
+        indices = torch.topk(
+            step["rollout_cost"], min(NUM_ROLLOUTS, step["rollout_cost"].numel()), largest=False
+        ).indices
         return mn.VGroup(*[
             self._path(
                 axes,
@@ -216,7 +233,9 @@ class DvrkSMPPITraceScene(mn.ThreeDScene):
     def _action_curve(panel, step):
         values = torch.linalg.vector_norm(step["nominal_after"][:, :3], dim=-1).numpy() * 1000
         axes = panel[0]
-        return axes.plot_line_graph(range(len(values)), np.clip(values, 0, 4.5), add_vertex_dots=False, line_color=mn.TEAL).set_stroke(width=3)
+        return axes.plot_line_graph(
+            range(len(values)), np.clip(values, 0, 4.5), add_vertex_dots=False, line_color=mn.TEAL
+        ).set_stroke(width=3)
 
     @staticmethod
     def _rate_curve(panel, step):
@@ -224,7 +243,9 @@ class DvrkSMPPITraceScene(mn.ThreeDScene):
         axes = panel[0]
         if len(values) == 1:
             values = np.repeat(values, 2)
-        return axes.plot_line_graph(range(len(values)), np.clip(values, 0, 220), add_vertex_dots=False, line_color=mn.ORANGE).set_stroke(width=3)
+        return axes.plot_line_graph(
+            range(len(values)), np.clip(values, 0, 220), add_vertex_dots=False, line_color=mn.ORANGE
+        ).set_stroke(width=3)
 
     @staticmethod
     def _continuity_jumps(step, derivative_order):
@@ -255,12 +276,16 @@ class DvrkSMPPITraceScene(mn.ThreeDScene):
     @classmethod
     def _continuity_curve(cls, panel, step, derivative_order, color):
         values = cls._continuity_jumps(step, derivative_order)
-        return panel[0].plot_line_graph(
-            range(len(values)),
-            values,
-            add_vertex_dots=True,
-            line_color=color,
-        ).set_stroke(width=2.5)
+        return (
+            panel[0]
+            .plot_line_graph(
+                range(len(values)),
+                values,
+                add_vertex_dots=True,
+                line_color=color,
+            )
+            .set_stroke(width=2.5)
+        )
 
     @staticmethod
     def _omega(step):
