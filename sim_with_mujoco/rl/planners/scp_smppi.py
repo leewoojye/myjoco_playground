@@ -21,6 +21,7 @@ class DvrkSCPSMPPIPlanner:
 
     DIM = 7
     CONTROL_LIMIT = (0.004, 0.004, 0.004, 0.06, 0.06, 0.06, 0.05)
+    RATE_LIMIT = (0.1, 0.1, 0.1, 0.06, 0.06, 0.06, 0.05)  # 위치단위: m/s
 
     def __init__(
         self,
@@ -56,7 +57,10 @@ class DvrkSCPSMPPIPlanner:
         self.goal = torch.zeros(self.DIM, dtype=dtype, device=device)
         self.rcm_position = torch.as_tensor(rcm_position, dtype=dtype, device=device)
         self.control_limit = torch.tensor(self.CONTROL_LIMIT, dtype=dtype, device=device)
-        self.rate_limit = self.control_limit / dt
+        self.speed_limit = torch.tensor(self.RATE_LIMIT, dtype=dtype, device=device)
+        # self.rate_limit = self.control_limit / dt
+        # self.rate_limit = 0.002  # dt 동안 낼 수 있는 속도 상한선
+        self.rate_limit = self.speed_limit / dt
         self.rate_noise_std = 0.5 * self.rate_limit
 
         support_indices = np.linspace(0, horizon - 1, num_control_points).round().astype(int)
@@ -213,13 +217,14 @@ class DvrkSCPSMPPIPlanner:
         states = torch.stack(states, dim=1)
         position_error = states[..., :3] - self.goal[:3]
         goal_cost = 2000.0 * position_error.square().sum(dim=(-2, -1))
+        terminal_cost = 20000.0 * position_error[:, -1].square().sum(dim=-1)
         control_cost = 0.01 * (actions / self.control_limit).square().sum(dim=(-2, -1))
         action_difference = actions[:, 1:] - actions[:, :-1]
-        smoothness_cost = self.action_smoothness_weight * (
-            action_difference / self.control_limit
-        ).square().sum(dim=(-2, -1))
+        smoothness_cost = self.action_smoothness_weight * (action_difference / self.control_limit).square().sum(
+            dim=(-2, -1)
+        )
         rcm_deviation = torch.linalg.vector_norm(self._rollout_rcm_residual(actions), dim=-1)
-        return states, goal_cost + control_cost + smoothness_cost, rcm_deviation
+        return states, goal_cost + terminal_cost + control_cost + smoothness_cost, rcm_deviation
 
     def _constraint_geometry(self, particles):
         def residual_with_aux(particle):
