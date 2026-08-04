@@ -20,6 +20,7 @@ class DvrkSCPSMPPIPlanner:
     """
 
     DIM = 7
+    # CONTROL_LIMIT = (0.002, 0.002, 0.002, 0.06, 0.06, 0.06, 0.05)
     CONTROL_LIMIT = (0.004, 0.004, 0.004, 0.06, 0.06, 0.06, 0.05)
     RATE_LIMIT = (0.1, 0.1, 0.1, 0.06, 0.06, 0.06, 0.05)  # 위치단위: m/s
 
@@ -60,8 +61,10 @@ class DvrkSCPSMPPIPlanner:
         self.speed_limit = torch.tensor(self.RATE_LIMIT, dtype=dtype, device=device)
         # self.rate_limit = self.control_limit / dt
         # self.rate_limit = 0.002  # dt 동안 낼 수 있는 속도 상한선
-        self.rate_limit = self.speed_limit / dt
+        # self.rate_limit = self.speed_limit / dt
+        self.rate_limit = self.speed_limit
         self.rate_noise_std = 0.5 * self.rate_limit
+        # self.rate_noise_std = self.rate_limit
 
         support_indices = np.linspace(0, horizon - 1, num_control_points).round().astype(int)
         spline = CubicSpline(support_indices, np.eye(num_control_points), axis=0)
@@ -121,9 +124,10 @@ class DvrkSCPSMPPIPlanner:
         for _ in range(self.svgd_iterations):
             particles.requires_grad_(True)
             actions = self._candidate_actions(particles)
-            _, costs, _ = self._evaluate(state, actions)
+            _, costs, rcm_dev = self._evaluate(state, actions)
+            costs = costs + rcm_dev.amax(dim=-1) * 10000
             beta = costs.min().detach()
-            log_likelihood = -torch.log(costs - beta + 1000.0)
+            log_likelihood = -torch.log(costs - beta + 10.0)
             score = torch.autograd.grad(log_likelihood.sum(), particles)[0]
 
             particles = particles.detach()
@@ -216,15 +220,25 @@ class DvrkSCPSMPPIPlanner:
 
         states = torch.stack(states, dim=1)
         position_error = states[..., :3] - self.goal[:3]
+        per_time_cost = position_error.square().sum(dim=-1)  # [K, T]
+        min_cost, min_t = per_time_cost.min(dim=-1)  # min_cost: [K], min_t: [K]
+
         goal_cost = 2000.0 * position_error.square().sum(dim=(-2, -1))
+        # path_vec = torch.linalg.vector_norm(position_error, dim=-1).sum(dim=-1)  # 누적 L2 거리 (시간 합)
+        # 한 번에 스칼라(전체 평균+거리)로
+        # path_scalar = torch.linalg.vector_norm(position_error.reshape(position_error.shape[0], -1), dim=-1)
         terminal_cost = 20000.0 * position_error[:, -1].square().sum(dim=-1)
+        # terminal_cost = 20000.0 * min_cost
+
         control_cost = 0.01 * (actions / self.control_limit).square().sum(dim=(-2, -1))
         action_difference = actions[:, 1:] - actions[:, :-1]
         smoothness_cost = self.action_smoothness_weight * (action_difference / self.control_limit).square().sum(
             dim=(-2, -1)
         )
         rcm_deviation = torch.linalg.vector_norm(self._rollout_rcm_residual(actions), dim=-1)
-        return states, goal_cost + terminal_cost + control_cost + smoothness_cost, rcm_deviation
+        # rcm_dev_scalar = torch.linalg.vector_norm(self._rollout_rcm_residual(actions), dim=-1).amax(dim=-1)
+        return states, goal_cost + terminal_cost + smoothness_cost, rcm_deviation
+        # return states, goal_cost + terminal_cost + control_cost + smoothness_cost, rcm_deviation
 
     def _constraint_geometry(self, particles):
         def residual_with_aux(particle):
@@ -280,7 +294,8 @@ class DvrkSCPSMPPIPlanner:
             offset = self.rcm_position - wrist_position
             residuals.append(offset - (offset * shaft_direction).sum(dim=-1, keepdim=True) * shaft_direction)
 
-        return torch.stack(residuals, dim=1)
+        # return torch.stack(residuals, dim=1)
+        return torch.stack(residuals, dim=1) - 0.002
 
     def _stein_direction(self, particles, score):
         flat_particles = particles.reshape(self.num_samples, -1)

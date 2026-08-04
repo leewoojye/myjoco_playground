@@ -197,9 +197,9 @@ def main():
         num_samples=512,
         horizon=8,
         num_control_points=4,
-        svgd_iterations=5,
-        lambda_=0.1, # 가중합을 하고 난 뒤 SVGD를 수행해 가중합 결과에 덜 민감함
-        action_smoothness_weight=1.0,
+        svgd_iterations=0,
+        lambda_=0.1,  # 가중합을 하고 난 뒤 SVGD를 수행해 가중합 결과에 덜 민감함
+        action_smoothness_weight=3.0,
     )
     planner.set_goal(goal)
     trace = []
