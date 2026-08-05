@@ -37,7 +37,7 @@ mn.config.output_file = "dvrk_scp_mppi_trace.mp4"
 
 
 class DvrkSCPMPPITraceScene(_shared_trace.DvrkSMPPITraceScene):
-    """Constrained SCP-MPPI trace scene with a physics-rate tip plot."""
+    """Constrained SCP-MPPI trace scene with tip kinematics plots."""
 
     def construct(self):
         trace = torch.load(TRACE_PATH, map_location="cpu", weights_only=True)
@@ -60,11 +60,47 @@ class DvrkSCPMPPITraceScene(_shared_trace.DvrkSMPPITraceScene):
         if not np.all(np.diff(time) > 0.0):
             raise ValueError("The physics-rate tip timestamps must be strictly increasing.")
 
+        # 1) full physics-rate view
+        DvrkSCPMPPITraceScene._save_tip_velocity_acceleration(
+            time=time,
+            position=position,
+            samples_per_control=0,
+            output_path=RUN_DIR / "tip_velocity_acceleration.png",
+        )
+
+        # 2) control-step sampled view (default 10 physics updates per control action)
+        samples_per_control = int(trace.get("physics_samples_per_control", 10))
+        if samples_per_control < 1:
+            samples_per_control = 1
+        if samples_per_control > 1:
+            control_tag = f"tip_velocity_acceleration_controlstep{samples_per_control}.png"
+            DvrkSCPMPPITraceScene._save_tip_velocity_acceleration(
+                time=time,
+                position=position,
+                samples_per_control=samples_per_control,
+                output_path=RUN_DIR / control_tag,
+            )
+
+    @staticmethod
+    def _save_tip_velocity_acceleration(time, position, samples_per_control, output_path):
         time = time - time[0]
+
+        if samples_per_control > 1:
+            idx = np.arange(0, len(time), samples_per_control)
+            if idx[-1] != len(time) - 1:
+                idx = np.r_[idx, len(time) - 1]
+            time = time[idx]
+            position = position[idx]
+            boundary_time = np.array([])
+            title_prefix = f"(control-step={samples_per_control})"
+            suffix = " / control-step sampled"
+        else:
+            boundary_time = time[np.arange(int(1), len(time), int(1))]
+            title_prefix = "(physics rate)"
+            suffix = ""
+
         velocity = np.gradient(position, time, axis=0, edge_order=2)
         acceleration = np.gradient(velocity, time, axis=0, edge_order=2)
-        samples_per_control = int(trace.get("physics_samples_per_control", 1))
-        boundary_time = time[np.arange(samples_per_control, len(time), samples_per_control)]
 
         figure, (velocity_axis, acceleration_axis) = plt.subplots(
             2,
@@ -78,7 +114,7 @@ class DvrkSCPMPPITraceScene(_shared_trace.DvrkSMPPITraceScene):
             time,
             velocity * 1000.0,
             boundary_time,
-            "Tip velocity (world frame)",
+            f"Tip velocity (world frame) {title_prefix}",
             "Velocity [mm/s]",
         )
         DvrkSCPMPPITraceScene._plot_vector_signal(
@@ -86,15 +122,14 @@ class DvrkSCPMPPITraceScene(_shared_trace.DvrkSMPPITraceScene):
             time,
             acceleration * 1000.0,
             boundary_time,
-            "Tip acceleration (world frame)",
+            f"Tip acceleration (world frame) {title_prefix}{suffix}",
             "Acceleration [mm/s²]",
         )
         acceleration_axis.set_xlabel("Simulation time [s]")
         RUN_DIR.mkdir(parents=True, exist_ok=True)
-        output_path = RUN_DIR / "tip_velocity_acceleration.png"
         figure.savefig(output_path, dpi=180)
         plt.close(figure)
-        print(f"Saved physics-rate tip kinematics plot: {output_path}")
+        print(f"Saved tip kinematics plot: {output_path}")
 
     @staticmethod
     def _plot_vector_signal(axis, time, signal, boundary_time, title, ylabel):
